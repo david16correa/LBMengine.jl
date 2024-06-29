@@ -44,14 +44,24 @@ function collisionOperator(id::Int64, model::LBMmodel)
     return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.Δt/model.τ * f
 end
 
-function LBequation(id::Int64, model::LBMmodel)
+function LBMpropagate!(id::Int64, model::LBMmodel)
+    # auxilary local function to implement periodic boundary conditions
     pbcShift(X, Δ) = X .+ Δ .|> x -> (x-1)%length(X) + 1
+    # the hydrodynamic variables are updated, and the new distribution fᵢ'(x, t) is found using the Lattice Boltzmann Equation
     hydroVariablesUpdate!(model)
     fnew = model.distributions[end][id] .+ collisionOperator(id, model)
+    # following the Lattice Boltzmann Equation, fᵢ(x + Δt cᵢ, t + Δt) = fᵢ'(x, t).
     coordinates = size(fnew) .|> len -> 1:len
     shiftedCoordinates = [pbcShift(coordinates[i], model.velocities[id].c[i]) for i in eachindex(coordinates)]
     append!(model.distributions, [fnew[shiftedCoordinates]])
+    # Finally, the new time is appended
     append!(model.time, [model.time[end]+model.Δt])
+end
+
+function LBMpropagate!(model::LBMmodel)
+    for id in eachindex(model.velocities)
+        LBMpropagate!(id, model)
+    end
 end
 
 #=function model_init()=#
