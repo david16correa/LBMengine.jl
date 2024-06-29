@@ -20,7 +20,7 @@ mutable struct LBMmodel
     c2_s::Float64 # c_s^2
     c4_s::Float64 # c_s^4
     τ::Float64 # relaxation time
-    distributions::Vector{LBMdistributions} # f_i(x, t)
-    velocities::Vector{LBMvelocity}
+    distributions::Vector{LBMdistributions} # f_i(x, t) for all t
+    velocities::Vector{LBMvelocity} # c_i for all i
     time::Vector{Float64}
 end
