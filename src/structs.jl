@@ -4,24 +4,23 @@ structs
 =============================================================================================
 ========================================================================================== =#
 
+# c and w
 struct LBMvelocity
     c::Vector{Int64}
-    weight::Float64
+    w::Float64
 end
+
+# f_i(x) for all i in the model, independent of time!
+LBMdistributions{T} = Vector{Matrix{T}} where T <: Number
 
 mutable struct LBMmodel
     Δx::Float64 # space step
     Δt::Float64 # time step (Δt = N Δx for some natural N)
     c_s::Float64 # speed of sound, usually cₛ² = (1/3) Δx²/Δt²
-    c2_s::Float64 # c_s squared
-    c4_s::Float64 # c_s to the fourth power
+    c2_s::Float64 # c_s^2
+    c4_s::Float64 # c_s^4
     τ::Float64 # relaxation time
-    distributions::Vector{LBMdistribution}
+    distributions::Vector{LBMdistributions} # f_i(x, t)
     velocities::Vector{LBMvelocity}
+    time::Vector{Float64}
 end
-
-mutable struct LBMdistribution
-    f::Vector{Matrix{Float64}}
-    vel::LBMvelocity
-end
-

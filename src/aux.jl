@@ -11,15 +11,8 @@ end
 function scalarFieldTimesVector(a::Matrix, V::Vector)
     return [a * V for a in a]
 end
-function scalarFieldTimesVector(V::Vector, a::Matrix)
-    return [a * V for a in a]
-end
 
 function vectorFieldDotVector(F::Matrix, v::Vector)
-    dot(v, w) = v .* w |> sum
-    return [dot(F, v) for F in F]
-end
-function vectorFieldDotVector(v::Vector, F::Matrix)
     dot(v, w) = v .* w |> sum
     return [dot(F, v) for F in F]
 end
