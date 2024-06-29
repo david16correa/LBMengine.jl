@@ -44,26 +44,35 @@ function collisionOperator(id::Int64, model::LBMmodel)
     return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.Δt/model.τ * f
 end
 
-function LBMpropagate!(id::Int64, model::LBMmodel)
-    # auxilary local function to implement periodic boundary conditions
-    pbcShift(X, Δ) = X .+ Δ .|> x -> (x-1)%length(X) + 1
-    # the hydrodynamic variables are updated, and the new distribution fᵢ'(x, t) is found using the Lattice Boltzmann Equation
-    hydroVariablesUpdate!(model)
-    fnew = model.distributions[end][id] .+ collisionOperator(id, model)
-    # following the Lattice Boltzmann Equation, fᵢ(x + Δt cᵢ, t + Δt) = fᵢ'(x, t).
-    coordinates = size(fnew) .|> len -> 1:len
-    shiftedCoordinates = [pbcShift(coordinates[i], model.velocities[id].c[i]) for i in eachindex(coordinates)]
-    append!(model.distributions, [fnew[shiftedCoordinates]])
-    # Finally, the new time is appended
-    append!(model.time, [model.time[end]+model.Δt])
-end
-
 function LBMpropagate!(model::LBMmodel)
+    # auxilary local function to implement periodic boundary conditions
+    pbcShift(X, Δ) = X .+ Δ .+ length(X) .|> x -> (x-1)%length(X) + 1;
+    # propagated distributions will be saved in a new vector
+    propagatedDistributions = [] |> LBMdistributions ;
+    # each propagated distribution is found and saved
     for id in eachindex(model.velocities)
-        LBMpropagate!(id, model)
+        shiftedCoordinates = [pbcShift(model.spaceCoordinates[i], model.velocities[id].c[i]) for i in eachindex(model.spaceCoordinates)];
+        model.distributions[end][id] .+ collisionOperator(id, model) |> fnew -> append!(propagatedDistributions, [fnew[shiftedCoordinates...]]);
     end
+    # the new hydrodynamic variables are updated
+    hydroVariablesUpdate!(model);
+    # Finally, the new distributions and time are appended
+    append!(model.distributions, [propagatedDistributions]);
+    append!(model.time, [model.time[end]+model.Δt]);
 end
 
-#=function model_init()=#
-#==#
-#=end=#
+function modelInit(velocities::Vector{LBMvelocity}; dim = 2, Δx = 0.01, Δt = 0.01, τ = 1., sideLength = 1)
+    n = length(velocities)
+    x = range(0, stop = sideLength, step = Δx); len = length(x)
+    spaceCoordinates = [x |> eachindex |> collect for _ in 1:dim]
+    c_s = Δx/Δt / √3
+    c2_s = c_s^2; c4_s = c2_s^2;
+    ρ = [1 for _ in Array{Int64}(undef, (len for _ in 1:dim)...)] 
+    u = [[0 for _ in 1:dim] for _ in ρ]
+    ρu = u
+    distributions = [[ρ/n for _ in velocities]]
+    time = [0.]
+    return LBMmodel(x, spaceCoordinates, Δx, Δt, c_s, c2_s, c4_s, ρ, ρu, u, τ, distributions, velocities, time)
+end
+
+

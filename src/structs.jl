@@ -11,10 +11,11 @@ struct LBMvelocity
 end
 
 # f_i(x) for all i in the model, independent of time!
-LBMdistributions{T} = Vector{Matrix{T}} where T <: Number
+LBMdistributions = Vector{Matrix{Float64}}
 
 mutable struct LBMmodel
     x::Vector{Float64}
+    spaceCoordinates::Vector{Vector{Int64}}
     Δx::Float64 # space step
     Δt::Float64 # time step (Δt = N Δx for some natural N)
     c_s::Float64 # speed of sound, usually cₛ² = (1/3) Δx²/Δt²
