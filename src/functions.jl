@@ -33,46 +33,61 @@ function equilibrium(id::Int64, model::LBMmodel)
     ci = model.velocities[id].c
     wi = model.velocities[id].w
     # the equilibrium distribution is found and returned
-    firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.c2_s + udotci.^2 / (2 * model.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.c2_s) .+ 1
+    firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.fluidParamters.c2_s + udotci.^2 / (2 * model.fluidParamters.c4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.fluidParamters.c2_s) .+ 1
     return secondStep .* (wi * model.ρ)
 end
 
 "calculates Ω at the last recorded time!"
 function collisionOperator(id::Int64, model::LBMmodel)
     checkIdInModel(id, model)
-    return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.Δt/model.τ * f
+    return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParamters.τ * f
 end
 
 function LBMpropagate!(model::LBMmodel)
-    # auxilary local function to implement periodic boundary conditions
-    pbcShift(X, Δ) = X .+ Δ .+ length(X) .|> x -> (x-1)%length(X) + 1;
     # propagated distributions will be saved in a new vector
     propagatedDistributions = [] |> LBMdistributions ;
     # each propagated distribution is found and saved
     for id in eachindex(model.velocities)
-        shiftedCoordinates = [pbcShift(model.spaceCoordinates[i], model.velocities[id].c[i]) for i in eachindex(model.spaceCoordinates)];
-        model.distributions[end][id] .+ collisionOperator(id, model) |> fnew -> append!(propagatedDistributions, [fnew[shiftedCoordinates...]]);
+        # collision (or relaxation)
+        fnew = model.distributions[end][id] .+ collisionOperator(id, model);
+        # streaming (or propagation)
+        pbcMatrixShift(fnew, model.velocities[id].c * model.spaceTime.Δt_Δx) |> fshifted -> append!(propagatedDistributions, [fshifted]);
     end
-    # the new hydrodynamic variables are updated
-    hydroVariablesUpdate!(model);
-    # Finally, the new distributions and time are appended
+    # the new distributions and time are appended
     append!(model.distributions, [propagatedDistributions]);
-    append!(model.time, [model.time[end]+model.Δt]);
+    append!(model.time, [model.time[end]+model.spaceTime.Δt]);
+    # Finally, the hydrodynamic variables are updated
+    hydroVariablesUpdate!(model);
 end
 
-function modelInit(velocities::Vector{LBMvelocity}; dim = 2, Δx = 0.01, Δt = 0.01, τ = 1., sideLength = 1)
-    n = length(velocities)
-    x = range(0, stop = sideLength, step = Δx); len = length(x)
-    spaceCoordinates = [x |> eachindex |> collect for _ in 1:dim]
-    c_s = Δx/Δt / √3
-    c2_s = c_s^2; c4_s = c2_s^2;
-    ρ = [1 for _ in Array{Int64}(undef, (len for _ in 1:dim)...)] 
-    u = [[0 for _ in 1:dim] for _ in ρ]
-    ρu = u
-    distributions = [[ρ/n for _ in velocities]]
-    time = [0.]
-    return LBMmodel(x, spaceCoordinates, Δx, Δt, c_s, c2_s, c4_s, ρ, ρu, u, τ, distributions, velocities, time)
+function modelInit(velocities::Vector{LBMvelocity}; dims = 2, Δx = 0.01, Δt = 0.01, τ = 1., sideLength = 1)
+    # ---------------- space and time variables are initialized ---------------- 
+    n = length(velocities);
+    x = range(0, stop = sideLength, step = Δx); len = length(x);
+    # to ensure Δt/Δx is an integer, Δx is adjusted
+    Δt_Δx = Δt/Δx |> ceil |> Int64; 
+    consistentΔx = Δt/Δt_Δx;
+    if consistentΔx != Δx
+        @warn "Δx = $(Δx) cannot be used, as Δt/Δx must be an integer; Δx = $(consistentΔx) will be used instead.";
+        Δx = consistentΔx;
+    end
+    spaceTime = (; x, Δx, Δt, Δt_Δx, dims); 
+    time = [0.];
+    # -------------------- fluid parameters are initialized -------------------- 
+    c_s = Δx/Δt / √3;
+    c2_s = (Δx/Δt)^2 / 3; c4_s = c2_s^2;
+    fluidParamters = (; c_s, c2_s, c4_s, τ);
+    ρ = [1. for _ in Array{Int64}(undef, (len for _ in 1:dims)...)];
+    u = [[0. for _ in 1:dims] for _ in ρ];
+    ρu = u;
+    distributions = [[ρ/n for _ in velocities]];
+    # ------------------------ the model is initialized ------------------------ 
+    model = LBMmodel(spaceTime, time, fluidParamters, ρ, ρu, u, distributions, velocities);
+    # to ensure consitensy, ρ, ρu and u are all found using the initial conditions of f_i
+    hydroVariablesUpdate!(model);
+    # the model is returned
+    return model
 end
 
 
