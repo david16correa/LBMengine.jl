@@ -12,16 +12,16 @@ end
 
 dot(v::Vector, w::Vector) = v .* w |> sum
 
-function scalarFieldTimesVector(a::Matrix, V::Vector)
+function scalarFieldTimesVector(a::Array, V::Vector)
     return [a * V for a in a]
 end
 
-function vectorFieldDotVector(F::Matrix, v::Vector)
+function vectorFieldDotVector(F::Array, v::Vector)
     return [dot(F, v) for F in F]
 end
 
-function vectorFieldDotVectorField(V::Matrix, W::Matrix)
-    return size(V) |> sizeV -> [dot(V[i,j], W[i,j]) for i in 1:sizeV[1], j in 1:sizeV[2]]
+function vectorFieldDotVectorField(V::Array, W::Array)
+    return size(V) |> sizeV -> [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 end
 
 # ---------------- shift auxilary functions ---------------- 
@@ -41,3 +41,112 @@ function pbcMatrixShift(M::Array{Float64}, Δ::Vector{Int64})
     return size(M) |> sizeM -> [pbcIndexShift(1:sizeM[i], Δ[i]) for i in eachindex(sizeM)] |> shiftedIndices -> M[shiftedIndices...]
 end
 
+# ---------------- some velocity sets ---------------- 
+
+cs = [
+      [0],
+      #======#
+      [1],
+      [-1]
+];
+ws = [
+      2/3,
+      #======#
+      1/6,
+      1/6
+];
+D1Q3 = [LBMvelocity(cs[i], ws[i]) for i in eachindex(cs)];
+
+cs = [
+      [0,0],
+      #======#
+      [1,0],
+      [-1,0],
+      [0,1],
+      [0,-1],
+      #======#
+      [1,1],
+      [-1,1],
+      [1,-1],
+      [-1,-1]
+];
+ws = [
+      4/9,
+      #======#
+      1/9,
+      1/9,
+      1/9,
+      1/9,
+      #======#
+      1/36,
+      1/36,
+      1/36,
+      1/36
+];
+D2Q9 = [LBMvelocity(cs[i], ws[i]) for i in eachindex(cs)];
+
+cs = [
+      [0,0,0], 
+      #======#
+      [1,0,0],
+      [0,1,0],
+      [0,0,1],
+      [-1,0,0],
+      [0,-1,0],
+      [0,0,-1],
+      #======#
+      [1,1,0],
+      [1,-1,0],
+      [-1,1,0],
+      [-1,-1,0],
+      [0,1,1],
+      [0,1,-1],
+      [0,-1,1],
+      [0,-1,-1],
+      [1,0,1],
+      [1,0,-1],
+      [-1,0,1],
+      [-1,0,-1],
+      #======#
+      [1,1,1],
+      [1,1,-1],
+      [1,-1,1],
+      [1,-1,-1],
+      [-1,1,1],
+      [-1,1,-1],
+      [-1,-1,1],
+      [-1,-1,-1]
+];
+ws = [
+      8/27,
+      #======#
+      2/27,
+      2/27,
+      2/27,
+      2/27,
+      2/27,
+      2/27,
+      #======#
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      1/54,
+      #======#
+      1/216,
+      1/216,
+      1/216,
+      1/216,
+      1/216,
+      1/216,
+      1/216,
+      1/216
+];
+D3Q27 = [LBMvelocity(cs[i], ws[i]) for i in eachindex(cs)];
