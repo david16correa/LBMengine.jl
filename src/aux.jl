@@ -12,6 +12,8 @@ end
 
 dot(v::Vector, w::Vector) = v .* w |> sum
 
+norm(T) = √(sum(el for el ∈ T.*T))
+
 function scalarFieldTimesVector(a::Array, V::Vector)
     return [a * V for a in a]
 end
@@ -24,7 +26,7 @@ function vectorFieldDotVectorField(V::Array, W::Array)
     return size(V) |> sizeV -> [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 end
 
-# ---------------- shift auxilary functions ---------------- 
+# -------------------------------- shift auxilary functions -------------------------------- 
 
 function pbcIndexShift(indices::UnitRange{Int64}, Δ::Int64)
     if Δ > 0
@@ -39,6 +41,30 @@ end
 
 function pbcMatrixShift(M::Array{Float64}, Δ::Vector{Int64})
     return size(M) |> sizeM -> [pbcIndexShift(1:sizeM[i], Δ[i]) for i in eachindex(sizeM)] |> shiftedIndices -> M[shiftedIndices...]
+end
+
+# ---------------------------- wall and fluid nodes functions ---------------------------- 
+
+function wallNodes(ρ::Array{Float64}, fluidSpeed::Int64)
+    sizeM = size(ρ)
+    wallMap = sizeM |> zeros .|> Bool
+    dims, len = length(sizeM), sizeM[1];
+
+    indices = [1:i for i in sizeM];
+    auxIndices = copy(indices);
+    paddingRanges = (1:fluidSpeed, len-fluidSpeed+1:len);
+
+    for id in eachindex(indices), paddingRange in paddingRanges
+        auxIndices[id] = paddingRange;
+        wallMap[auxIndices...] .= 1;
+        auxIndices = copy(indices)
+    end
+
+    return wallMap
+end
+
+function fluidNodes(ρ::Array{Float64}, fluidSpeed::Int64)
+    return wallNodes(ρ, fluidSpeed) .|> boolN -> !boolN
 end
 
 # ---------------- some velocity sets ---------------- 

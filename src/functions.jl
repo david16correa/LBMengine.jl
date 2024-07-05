@@ -1,6 +1,6 @@
 #= ==========================================================================================
 =============================================================================================
-functions
+general methods
 =============================================================================================
 ========================================================================================== =#
 
@@ -63,6 +63,12 @@ function LBMpropagate!(model::LBMmodel)
     hydroVariablesUpdate!(model);
 end
 
+#= ==========================================================================================
+=============================================================================================
+init methods
+=============================================================================================
+========================================================================================== =#
+
 "Initializes f_i to f^eq_i, which is the simplest strategy."
 function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidParamters::NamedTuple, ρ::Array{Float64}, u::Array{Vector{Float64}}) 
     # the quantities to be used are saved separately
@@ -73,7 +79,6 @@ function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidPara
     secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*fluidParamters.c2_s) .+ 1
     return secondStep .* (wi * ρ)
 end
-
 
 function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", Δt = 0.01, τ = 1., sideLength = 1)
     dims, len = ρ |> size |> length, size(ρ, 1);
