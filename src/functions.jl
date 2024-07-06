@@ -33,8 +33,8 @@ function equilibrium(id::Int64, model::LBMmodel)
     ci = model.velocities[id].c
     wi = model.velocities[id].w
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.fluidParamters.c2_s + udotci.^2 / (2 * model.fluidParamters.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.fluidParamters.c2_s) .+ 1
+    firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.fluidParams.c2_s) .+ 1
     return secondStep .* (wi * model.ρ)
 end
 
@@ -43,7 +43,7 @@ function collisionOperator(id::Int64, model::LBMmodel)
     # the id is checked
     checkIdInModel(id, model)
     # the Bhatnagar-Gross-Krook collision opeartor is used
-    return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParamters.τ * f
+    return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
 end
 
 function LBMpropagate!(model::LBMmodel)
@@ -70,32 +70,30 @@ init methods
 ========================================================================================== =#
 
 "Initializes f_i to f^eq_i, which is the simplest strategy."
-function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidParamters::NamedTuple, ρ::Array{Float64}, u::Array{Vector{Float64}}) 
+function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidParams::NamedTuple, ρ::Array{Float64}, u::Array{Vector{Float64}}) 
     # the quantities to be used are saved separately
     ci = velocities[id].c
     wi = velocities[id].w
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/fluidParamters.c2_s + udotci.^2 / (2 * fluidParamters.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*fluidParamters.c2_s) .+ 1
+    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/fluidParams.c2_s + udotci.^2 / (2 * fluidParams.c4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*fluidParams.c2_s) .+ 1
     return secondStep .* (wi * ρ)
 end
 
-function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", Δt = 0.01, τ = 1., sideLength = 1)
-    dims, len = ρ |> size |> length, size(ρ, 1);
-    # if the velocity set is not defined by the user,
-    # it is chosen from the dimensionality of the problem 
-    # (no velocity set has been hard coded yet for 4 or more dimensions)
-    if velocities isa Vector{LBMvelocity}
-        nothing
-    elseif dims == 1
-        velocities = D1Q3;
-    elseif dims == 2
-        velocities = D2Q9;
-    elseif dims == 3
-        velocities = D3Q27;
-    else
+function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", Δt = 0.01, τ = 0.08, sideLength = 1)
+    sizeM = size(ρ)
+    prod(i == j for i in sizeM for j in sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
+
+    dims, len = length(sizeM), sizeM[1];
+
+    # if dimensions are too large, and the user did not define a velocity set, then there's an error
+    if (dims >= 4) && !(velocities isa Vector{LBMvelocity})
         error("for dimensions higher than 3 a velocity set must be defined using a Vector{LBMvelocity}! modelInit(...; velocities = yourInput)")
+    # if the user did not define a velocity set, then a preset is chosen
+    elseif !(velocities isa Vector{LBMvelocity})
+        velocities = [[D1Q3]; [D2Q9]; [D3Q27]] |> v -> v[dims]
     end
+
     #= ---------------- space and time variables are initialized ---------------- =#
     # A vector for the coordinates (which are all assumed to be equal) is created, and its step is stored
     x = range(0, stop = sideLength, length = len); Δx = step(x);
@@ -108,22 +106,31 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
     end
     spaceTime = (; x, Δx, Δt, Δt_Δx, dims); 
     time = [0.];
+
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s = Δx/Δt / √3;
     c2_s = (Δx/Δt)^2 / 3; c4_s = c2_s^2;
-    fluidParamters = (; c_s, c2_s, c4_s, τ);
-    initialDistributions = [initialConditions(id, velocities, fluidParamters, ρ, u) for id in eachindex(velocities)]
+    fluidParams = (; c_s, c2_s, c4_s, τ);
+    wallRegion = wallNodes(ρ, Δt_Δx); 
+    padded_ρ = copy(ρ); padded_ρ[wallRegion] .= 0;
+    initialDistributions = [initialConditions(id, velocities, fluidParams, padded_ρ, u) for id in eachindex(velocities)]
+
+    #= -------------------- boundary conditions (bounce back) -------------------- =#
+    streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
+    boundaryConditionsParams = (; wallRegion, streamingInvasionRegions, oppositeVectorId);
+
     #= ------------------------ the model is initialized ------------------------ =#
-    model = LBMmodel(spaceTime, time, fluidParamters, ρ, ρ.*u, u, [initialDistributions], velocities);
+    model = LBMmodel(spaceTime, time, fluidParams, padded_ρ, padded_ρ.*u, u, [initialDistributions], velocities, boundaryConditionsParams);
     # to ensure consitensy, ρ, ρu and u are all found using the initial conditions of f_i
     hydroVariablesUpdate!(model);
     # if either ρ or u changed, the user is notified
     acceptableError = 0.01;
-    error_ρ = (model.ρ - ρ .|> abs) |> maximum
+    error_ρ = (model.ρ - padded_ρ .|> abs) |> maximum
     error_u = (model.u - u .|> v -> sum(v.*v)) |> maximum
     if (error_ρ > acceptableError) || (error_u > acceptableError)
         @warn "the initial conditions for ρ and u could not be met. New ones were defined."
     end
+
     # the model is returned
     return model
 end

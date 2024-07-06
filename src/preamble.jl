@@ -8,5 +8,8 @@ preamble
 using Pkg;
 Pkg.activate("environment");
 
+# numerical analysis
+using SparseArrays 
+
 # Graphics
 using CairoMakie

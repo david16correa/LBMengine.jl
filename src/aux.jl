@@ -30,41 +30,61 @@ end
 
 function pbcIndexShift(indices::UnitRange{Int64}, Δ::Int64)
     if Δ > 0
-        return [indices[(Δ+1):end]; indices[1:Δ]]
+        return [indices[end-Δ+1:end]; indices[1:end-Δ]]
     elseif Δ < 0
-        # originalmente era [indices[end-Δ+1:end]; indices[1:end-Δ]] con un shift positivo, pero Δ < 0
-        return [indices[end+Δ+1:end]; indices[1:end+Δ]]
+        # originalmente era [indices[(Δ+1):end]; indices[1:Δ]] con un shift positivo, pero Δ < 0
+        return [indices[(-Δ+1):end]; indices[1:-Δ]]
     else
         return indices
     end
 end
 
-function pbcMatrixShift(M::Array{Float64}, Δ::Vector{Int64})
+function pbcMatrixShift(M::Union{Array{Float64}, SparseMatrixCSC, BitArray}, Δ::Vector{Int64})
     return size(M) |> sizeM -> [pbcIndexShift(1:sizeM[i], Δ[i]) for i in eachindex(sizeM)] |> shiftedIndices -> M[shiftedIndices...]
 end
 
 # ---------------------------- wall and fluid nodes functions ---------------------------- 
 
 function wallNodes(ρ::Array{Float64}, fluidSpeed::Int64)
+    # the size, dimensions, and side length of the density field are saved
     sizeM = size(ρ)
-    wallMap = sizeM |> zeros .|> Bool
     dims, len = length(sizeM), sizeM[1];
 
+    # the wallMap is initialized as an boolean array filled with zeroes,
+    # and the indices of the density field are saved.
+    wallMap = sizeM |> zeros .|> Bool
     indices = [1:i for i in sizeM];
+
+    # for each dimension, a padding will be addd. To do this, a set of auxilary indices will be needed.
     auxIndices = copy(indices);
     paddingRanges = (1:fluidSpeed, len-fluidSpeed+1:len);
 
+    # the padding is added in every dimension
     for id in eachindex(indices), paddingRange in paddingRanges
         auxIndices[id] = paddingRange;
         wallMap[auxIndices...] .= 1;
         auxIndices = copy(indices)
     end
 
-    return wallMap
+    #  the final wall map is returned as a sparse matrix
+    (dims > 2) ? (return wallMap) : (return wallMap |> sparse)
+    #  SparseArrays.jl only works for 1D and 2D. Look into SparseArrayKit.jl for higher dimensional compatibility!!
 end
 
 function fluidNodes(ρ::Array{Float64}, fluidSpeed::Int64)
     return wallNodes(ρ, fluidSpeed) .|> boolN -> !boolN
+end
+
+# --------------------------- bounce-back boundary conditions --------------------------- 
+
+function bounceBackPrep(wallRegion::Union{SparseMatrixCSC, BitArray}, velocities::Vector{LBMvelocity})
+    cs = [velocity.c for velocity in velocities];
+
+    streamingInvasionRegions = [(pbcMatrixShift(wallRegion, -c) .|| wallRegion) .⊻ wallRegion for c in cs]
+
+    oppositeVectorId = [findfirst(x -> x == -c, cs) for c in cs]
+
+    return streamingInvasionRegions, oppositeVectorId
 end
 
 # ---------------- some velocity sets ---------------- 

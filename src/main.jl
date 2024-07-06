@@ -14,7 +14,7 @@ x = range(-1, stop = 1, length = len);
 ρ = [1. for i in x, j in x];
 u = [(i == j == 0) ? ([0,0]) : [-j; i]./sqrt(i^2 + j^2) for i in x, j in x];
 
-model = modelInit(ρ, u; τ = 1.);
+model = modelInit(ρ, u);
 
 @time for _ in 1:101
     LBMpropagate!(model);
