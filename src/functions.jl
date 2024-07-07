@@ -23,7 +23,7 @@ end
 function hydroVariablesUpdate!(model::LBMmodel)
     model.ρ = massDensity(model)
     model.ρu = momentumDensity(model)
-    model.u = model.ρu ./ model.ρ
+    model.u = model.ρu ./ model.ρ .|> v -> isnan(v[1]) ? [0;0.] : v
 end
 
 function equilibrium(id::Int64, model::LBMmodel)
@@ -47,18 +47,32 @@ function collisionOperator(id::Int64, model::LBMmodel)
 end
 
 function LBMpropagate!(model::LBMmodel)
+    # collision (or relaxation)
+    collisionedDistributions = [model.distributions[end][id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 
+
     # propagated distributions will be saved in a new vector
     propagatedDistributions = [] |> LBMdistributions ;
-    # each propagated distribution is found and saved
+
+    # streaming (or propagation), with streaming invasion exchange
     for id in eachindex(model.velocities)
-        # collision (or relaxation)
-        fnew = model.distributions[end][id] .+ collisionOperator(id, model);
-        # streaming (or propagation)
-        pbcMatrixShift(fnew, model.velocities[id].c * model.spaceTime.Δt_Δx) |> fshifted -> append!(propagatedDistributions, [fshifted]);
+        # distributions are initially streamed, and the wall regions are imposed to vanish
+        streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c * model.spaceTime.Δt_Δx)
+        streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
+
+        # the invasion region of the fluid with opposite momentum is retrieved
+        conjugateInvasionRegion = model.boundaryConditionsParams |> params -> params.streamingInvasionRegions[params.oppositeVectorId[id]]
+
+        # streaming invasion exchange step is performed
+        streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[id][conjugateInvasionRegion]
+
+        # the resulting propagation is appended to the propagated distributions
+        append!(propagatedDistributions, [streamedDistribution]);
     end
+
     # the new distributions and time are appended
     append!(model.distributions, [propagatedDistributions]);
     append!(model.time, [model.time[end]+model.spaceTime.Δt]);
+
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model);
 end

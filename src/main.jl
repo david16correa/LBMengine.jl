@@ -12,7 +12,9 @@ main - non-trivial initial conditions
 len = 100;
 x = range(-1, stop = 1, length = len);
 ρ = [1. for i in x, j in x];
-u = [(i == j == 0) ? ([0,0]) : [-j; i]./sqrt(i^2 + j^2) for i in x, j in x];
+u = [[1; 0.] for i in x, j in x];
+#=u = [[i; 0.] for i in x, j in x];=#
+#=u = [(i == j == 0) ? ([0,0]) : [-j; i]./sqrt(i^2 + j^2) for i in x, j in x];=#
 
 model = modelInit(ρ, u);
 
@@ -51,25 +53,31 @@ fig, ax, hm = heatmap(ρ,
 Colorbar(fig[1,2], hm);
 fig
 
-t = 1
+t = 0
+
+t += 10
 ρ = massDensity(model; time = t);
 ρu = momentumDensity(model; time = t);
-u = ρu./ρ;
 #----------------------------------heatmap and colorbar---------------------------------
-z = norm.(u);
-fig, ax, hm = heatmap(x,x,z, alpha = 0.7);
+z = norm.(ρu);
+fig, ax, hm = heatmap(x,x,z, alpha = 0.7,
+    axis=(
+        title = "momentum density, t = $(model.time[t])",
+    )
+);
 ax.xlabel = "x"; ax.ylabel = "y";
 Colorbar(fig[:, end+1], hm,
     #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
 );
 #--------------------------------------gradient---------------------------------------
 pos = [Point2(i,j) for i ∈ x[1:10:end] for j ∈ x[1:10:end]];
-vec = [u[i,j] for i ∈ eachindex(x)[1:10:end] for j ∈ eachindex(x)[1:10:end]];
+vec = [ρu[i,j] for i ∈ eachindex(x)[1:10:end] for j ∈ eachindex(x)[1:10:end]];
 lengths = norm.(vec) .|> len -> (len == 0) ? (len = 1) : (len = len);
 vec = 0.05 .* vec ./ lengths;
 arrows!(fig[1,1], pos, vec, 
     arrowsize = 10, 
     align = :center
 );
+t
 fig
 
