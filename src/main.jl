@@ -12,10 +12,9 @@ main - non-trivial initial conditions
 len = 100;
 x = range(-1, stop = 1, length = len);
 ρ = [1. for i in x, j in x];
-u = [[1; 0.] for i in x, j in x];
-#=u = [[i; 0.] for i in x, j in x];=#
+#=u = [[1; 0.] for i in x, j in x];=#
+u = [[i; 0.] for i in x, j in x];
 #=u = [(i == j == 0) ? ([0,0]) : [-j; i]./sqrt(i^2 + j^2) for i in x, j in x];=#
-
 model = modelInit(ρ, u);
 
 @time for _ in 1:101
@@ -55,7 +54,8 @@ fig
 
 t = 0
 
-t += 10
+#=t += 10=#
+t = 101
 ρ = massDensity(model; time = t);
 ρu = momentumDensity(model; time = t);
 #----------------------------------heatmap and colorbar---------------------------------

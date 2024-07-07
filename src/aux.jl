@@ -87,6 +87,47 @@ function bounceBackPrep(wallRegion::Union{SparseMatrixCSC, BitArray}, velocities
     return streamingInvasionRegions, oppositeVectorId
 end
 
+# ---------------- graphics stuff ---------------- 
+
+"The animation of the cart moving along the roller coaster is created."
+function LBManim8(model::LBMmodel; desired_fps = 30)
+    # for the animation, only the position of the cart will vary from frame to frame. This Observable will deal with that
+    animTime = 1 |> Observable;
+
+    # the step and frame rate of the animation that can be achieved with the provided data are determined from a requested frame rate
+    animStep = (model.time[2] - model.time[1]) * desired_fps |> inv |> round |> Int64
+    achieved_fps = model.time[1:animStep:end] |> v -> v[2] - v[1] |> inv |> round |> Int64
+
+    ρu = momentumDensity(model; time = animTime |> O -> O.val) 
+    #----------------------------------heatmap and colorbar---------------------------------
+    animationFig, animationAx, hm = heatmap(x,x,norm.(ρu), alpha = 0.7,
+        axis=(
+            title = "momentum density, t = $(model.time[animTime |> O -> O.val])",
+        )
+    );
+    animationAx.xlabel = "x"; animationAx.ylabel = "y";
+    Colorbar(animationFig[:, end+1], hm,
+        #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
+    );
+    #--------------------------------------gradient---------------------------------------
+    pos = [Point2(i,j) for i ∈ model.spaceTime.x[1:10:end] for j ∈ model.spaceTime.x[1:10:end]];
+    vec = [ρu[i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
+    lengths = norm.(vec) .|> len -> (len == 0) ? (len = 1) : (len = len);
+    vec = 0.05 .* vec ./ lengths;
+    arrows!(animationFig[1,1], pos, vec, 
+        arrowsize = 10, 
+        align = :center
+    );
+
+    record(animationFig, 
+        "anims/$(today())/LBMsim ($(achieved_fps) fps) $(Time(now())).mp4", 
+        1:animStep:length(model.time); framerate = achieved_fps) do t
+        # mutating the Observable declared above, the cart's dot is moved around the scene
+        animTime[] = t;
+        @show t
+    end
+end
+
 # ---------------- some velocity sets ---------------- 
 
 cs = [

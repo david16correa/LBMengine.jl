@@ -60,10 +60,10 @@ function LBMpropagate!(model::LBMmodel)
         streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
 
         # the invasion region of the fluid with opposite momentum is retrieved
-        conjugateInvasionRegion = model.boundaryConditionsParams |> params -> params.streamingInvasionRegions[params.oppositeVectorId[id]]
+        conjugateInvasionRegion, conjugateId = model.boundaryConditionsParams |> params -> (params.streamingInvasionRegions[params.oppositeVectorId[id]], params.oppositeVectorId[id])
 
         # streaming invasion exchange step is performed
-        streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[id][conjugateInvasionRegion]
+        streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
 
         # the resulting propagation is appended to the propagated distributions
         append!(propagatedDistributions, [streamedDistribution]);
