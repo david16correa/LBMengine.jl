@@ -30,7 +30,8 @@ model = modelInit(ρ, u; walledDimensions = [-1]);
 @time for _ in 1:201
     LBMpropagate!(model);
 end
-@time LBManim8(model);
+@time anim8fluidVelocity(model);
+@time anim8massDensity(model);
 
 #= ==========================================================================================
 =============================================================================================

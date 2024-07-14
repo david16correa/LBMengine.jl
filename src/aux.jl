@@ -96,8 +96,8 @@ function save_jpg(name::String, fig::Figure)
     run(`rm $namePNG`)
 end
 
-"The animation of the cart moving along the roller coaster is created."
-function LBManim8(model::LBMmodel; desired_fps = 30)
+"The animation of the fluid velocity evolution is created."
+function anim8fluidVelocity(model::LBMmodel)
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
     maximumFluidSpeed = 1.;
@@ -117,7 +117,6 @@ function LBManim8(model::LBMmodel; desired_fps = 30)
         animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(u), alpha = 0.7,
             colorrange = (0, maximumFluidSpeed), 
             highclip = :red, # truncate the colormap 
-            lowclip = :blue, # truncate the colormap 
             axis=(
               title = "fluid velocity, t = $(model.time[t] |> x -> round(x; digits = 2))",
             ),
@@ -134,6 +133,39 @@ function LBManim8(model::LBMmodel; desired_fps = 30)
         arrows!(animationFig[1,1], pos, vec, 
             arrowsize = 10, 
             align = :center
+        );
+        xlims!(xlb, xub);
+        ylims!(xlb, xub);
+        save("tmp/$(t).png", animationFig)
+    end
+
+    run(`./createAnim.sh`)
+    name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
+    run(`mv anims/output.mp4 $(name)`)
+end
+
+"The animation of the mass density evolution is created."
+function anim8massDensity(model::LBMmodel)
+    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+
+    ρs = [massDensity(model; time = t) for t in eachindex(model.time)]
+
+    maximumMassDensity = (ρs .|> maximum) |> maximum
+
+    mkdir("tmp")
+
+    for t in eachindex(model.time)
+        #----------------------------------heatmap and colorbar---------------------------------
+        animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, ρs[t], 
+            colorrange = (0, maximumMassDensity), 
+            lowclip = :red, # truncate the colormap 
+            axis=(
+              title = "mass density, t = $(model.time[t] |> x -> round(x; digits = 2))",
+            ),
+        );
+        animationAx.xlabel = "x"; animationAx.ylabel = "y";
+        Colorbar(animationFig[:, end+1], hm,
+            #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
         );
         xlims!(xlb, xub);
         ylims!(xlb, xub);
