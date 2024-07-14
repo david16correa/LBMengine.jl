@@ -23,7 +23,9 @@ end
 function hydroVariablesUpdate!(model::LBMmodel)
     model.ρ = massDensity(model)
     model.ρu = momentumDensity(model)
-    model.u = model.ρu ./ model.ρ .|> v -> isnan(v[1]) ? [0;0.] : v
+    model.u = [[0., 0] for _ in model.ρ]
+    fluidIndices = (model.ρ .≈ 0) .|> b -> !b;
+    model.u[fluidIndices] = model.ρu[fluidIndices] ./ model.ρ[fluidIndices]
 end
 
 function equilibrium(id::Int64, model::LBMmodel)
@@ -94,7 +96,7 @@ function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidPara
     return secondStep .* (wi * ρ)
 end
 
-function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", Δt = 0.01, τ = 0.08, sideLength = 1)
+function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", Δt = 0.01, τ = 0.08, sideLength = 1, walledDimensions = [-1])
     sizeM = size(ρ)
     prod(i == j for i in sizeM for j in sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
 
@@ -125,7 +127,7 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
     c_s = Δx/Δt / √3;
     c2_s = (Δx/Δt)^2 / 3; c4_s = c2_s^2;
     fluidParams = (; c_s, c2_s, c4_s, τ);
-    wallRegion = wallNodes(ρ, Δt_Δx); 
+    wallRegion = wallNodes(ρ, Δt_Δx; walledDimensions = walledDimensions); 
     padded_ρ = copy(ρ); padded_ρ[wallRegion] .= 0;
     initialDistributions = [initialConditions(id, velocities, fluidParams, padded_ρ, u) for id in eachindex(velocities)]
 
@@ -139,8 +141,9 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
     hydroVariablesUpdate!(model);
     # if either ρ or u changed, the user is notified
     acceptableError = 0.01;
-    error_ρ = (model.ρ - padded_ρ .|> abs) |> maximum
-    error_u = (model.u - u .|> v -> sum(v.*v)) |> maximum
+    fluidRegion = wallRegion .|> b -> !b;
+    error_ρ = (model.ρ[fluidRegion] - ρ[fluidRegion] .|> abs) |> maximum
+    error_u = (model.u[fluidRegion] - u[fluidRegion] .|> v -> sum(v.*v)) |> maximum
     if (error_ρ > acceptableError) || (error_u > acceptableError)
         @warn "the initial conditions for ρ and u could not be met. New ones were defined."
     end

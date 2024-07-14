@@ -45,7 +45,7 @@ end
 
 # ---------------------------- wall and fluid nodes functions ---------------------------- 
 
-function wallNodes(ρ::Array{Float64}, fluidSpeed::Int64)
+function wallNodes(ρ::Array{Float64}, fluidSpeed::Int64; walledDimensions = [-1])
     # the size, dimensions, and side length of the density field are saved
     sizeM = size(ρ)
     dims, len = length(sizeM), sizeM[1];
@@ -55,12 +55,15 @@ function wallNodes(ρ::Array{Float64}, fluidSpeed::Int64)
     wallMap = sizeM |> zeros .|> Bool
     indices = [1:i for i in sizeM];
 
+    # by default, all dimensions are walled
+    (walledDimensions == [-1]) ? (walledDimensions = eachindex(indices)) : nothing
+
     # for each dimension, a padding will be addd. To do this, a set of auxilary indices will be needed.
     auxIndices = copy(indices);
     paddingRanges = (1:fluidSpeed, len-fluidSpeed+1:len);
 
     # the padding is added in every dimension
-    for id in eachindex(indices), paddingRange in paddingRanges
+    for id in walledDimensions, paddingRange in paddingRanges
         auxIndices[id] = paddingRange;
         wallMap[auxIndices...] .= 1;
         auxIndices = copy(indices)
@@ -69,10 +72,6 @@ function wallNodes(ρ::Array{Float64}, fluidSpeed::Int64)
     #  the final wall map is returned as a sparse matrix
     (dims > 2) ? (return wallMap) : (return wallMap |> sparse)
     #  SparseArrays.jl only works for 1D and 2D. Look into SparseArrayKit.jl for higher dimensional compatibility!!
-end
-
-function fluidNodes(ρ::Array{Float64}, fluidSpeed::Int64)
-    return wallNodes(ρ, fluidSpeed) .|> boolN -> !boolN
 end
 
 # --------------------------- bounce-back boundary conditions --------------------------- 
@@ -99,38 +98,45 @@ end
 
 "The animation of the cart moving along the roller coaster is created."
 function LBManim8(model::LBMmodel; desired_fps = 30)
-    # the step and frame rate of the animation that can be achieved with the provided data are determined from a requested frame rate
-    animStep = (model.time[2] - model.time[1]) * desired_fps |> inv |> round |> Int64
-    achieved_fps = model.time[1:animStep:end] |> v -> v[2] - v[1] |> inv |> round |> Int64
+    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
-    animTime = 1:animStep:length(model.time) 
+    maximumFluidSpeed = 1.;
 
     mkdir("tmp")
 
     for t in eachindex(model.time)
+        ρ = massDensity(model; time = t)
         ρu = momentumDensity(model; time = t) 
+        u = ρu ./ ρ .|> v -> isnan(v[1]) ? [0;0.] : v
+
+        if t == 1 
+            maximumFluidSpeed = norm.(u) |> maximum
+        end
+
         #----------------------------------heatmap and colorbar---------------------------------
-        animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(ρu), alpha = 0.7,
-            #=colorrange = (0, 1), =#
-            #=highclip = :red, # truncate the colormap =#
-            #=lowclip = :blue, # truncate the colormap =#
+        animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(u), alpha = 0.7,
+            colorrange = (0, maximumFluidSpeed), 
+            highclip = :red, # truncate the colormap 
+            lowclip = :blue, # truncate the colormap 
             axis=(
-                title = "momentum density, t = $(model.time[t])",
-            )
+              title = "fluid velocity, t = $(model.time[t] |> x -> round(x; digits = 2))",
+            ),
         );
         animationAx.xlabel = "x"; animationAx.ylabel = "y";
         Colorbar(animationFig[:, end+1], hm,
             #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
         );
-        #--------------------------------------gradient---------------------------------------
-        pos = [Point2(i,j) for i ∈ model.spaceTime.x[1:10:end] for j ∈ model.spaceTime.x[1:10:end]];
-        vec = [ρu[i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
-        lengths = norm.(vec) .|> len -> (len == 0) ? (len = 1) : (len = len);
-        vec = 0.05 .* vec ./ lengths;
+        #--------------------------------------vector field---------------------------------------
+        vectorFieldX = model.spaceTime.x[1:10:end];
+        pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
+        vec = [u[i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
+        vec = 0.07 .* vec ./ maximumFluidSpeed;
         arrows!(animationFig[1,1], pos, vec, 
             arrowsize = 10, 
             align = :center
         );
+        xlims!(xlb, xub);
+        ylims!(xlb, xub);
         save("tmp/$(t).png", animationFig)
     end
 
