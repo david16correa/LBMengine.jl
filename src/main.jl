@@ -18,14 +18,14 @@ gaussian(x,y) = exp(-(x^2+y^2)*5) / 2
 len = 101;
 x = range(-1, stop = 1, length = len); y = copy(x);
 ρ = [1. for i in x, j in y];
-#=u = [[1; 0.] for i in x, j in x];=#
+#=u = [[1; 1.] for i in x, j in x];=#
 #=u = [[i*(i-1)*(2j-1); -j*(j-1)*(2i-1)] for i in x, j in y];=#
 #=u = [f(i,j) * unitφ(i,j) for i in x, j in x];=#
 #=u = [f(i,j) * [1/2; 0]  for i in x, j in x];=#
 u = [gaussian(i,j) * [1.; 1]  for i in x, j in x];
 #=u = [[-gx(j) * i; g(j)] for i in x, j in x];=#
 
-model = modelInit(ρ, u; walledDimensions = [-1]);
+model = modelInit(ρ, u; walledDimensions = [ ]);
 
 @time for _ in 1:201
     LBMpropagate!(model);

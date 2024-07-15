@@ -96,7 +96,7 @@ function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidPara
     return secondStep .* (wi * ρ)
 end
 
-function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", Δt = 0.01, τ = 0.08, sideLength = 1, walledDimensions = [-1])
+function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", τ_Δt = 0.8, sideLength = 1, walledDimensions = [-1])
     sizeM = size(ρ)
     prod(i == j for i in sizeM for j in sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
 
@@ -112,20 +112,14 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
 
     #= ---------------- space and time variables are initialized ---------------- =#
     # A vector for the coordinates (which are all assumed to be equal) is created, and its step is stored
-    x = range(0, stop = sideLength, length = len); Δx = step(x);
-    # Δt/Δx is imposed to be an integer; Δt is adjusted if necessary
-    Δt_Δx = Δt/Δx |> ceil |> Int64; 
-    consistentΔt = Δx*Δt_Δx;
-    if consistentΔt != Δt
-        @warn "Δt = $(Δt) cannot be used, as Δt/Δt must be an integer; Δt = $(consistentΔt) will be used instead.";
-        Δt = consistentΔt;
-    end
+    x = range(0, stop = sideLength, length = len); Δx = Δt = step(x);
+    Δt_Δx = 1; # Δt/Δx
     spaceTime = (; x, Δx, Δt, Δt_Δx, dims); 
     time = [0.];
 
     #= -------------------- fluid parameters are initialized -------------------- =#
-    c_s = Δx/Δt / √3;
-    c2_s = (Δx/Δt)^2 / 3; c4_s = c2_s^2;
+    c_s, c2_s, c4_s = 1/(Δt_Δx * √3), 1/(Δt_Δx^2 * 3), 1/(Δt_Δx^4 * 9);
+    τ = Δt * τ_Δt;
     fluidParams = (; c_s, c2_s, c4_s, τ);
     wallRegion = wallNodes(ρ, Δt_Δx; walledDimensions = walledDimensions); 
     padded_ρ = copy(ρ); padded_ρ[wallRegion] .= 0;
@@ -142,8 +136,8 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
     # if either ρ or u changed, the user is notified
     acceptableError = 0.01;
     fluidRegion = wallRegion .|> b -> !b;
-    error_ρ = (model.ρ[fluidRegion] - ρ[fluidRegion] .|> abs) |> maximum
-    error_u = (model.u[fluidRegion] - u[fluidRegion] .|> v -> sum(v.*v)) |> maximum
+    error_ρ = (model.ρ[fluidRegion] - ρ[fluidRegion] .|> abs)  |> maximum
+    error_u = (model.u[fluidRegion] - u[fluidRegion] .|> norm) |> maximum
     if (error_ρ > acceptableError) || (error_u > acceptableError)
         @warn "the initial conditions for ρ and u could not be met. New ones were defined."
     end
