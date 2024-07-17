@@ -110,8 +110,31 @@ pressure difference boundary conditions
 =============================================================================================
 ========================================================================================== =#
 
-function pressureDiffPrep(pressurizedDims)
-    
+function auxNodesPrep(sizeM::Tuple, pressurizedDimensions::Vector{Int64}, N::Int64)
+    auxSystemSize = [s for s in sizeM]; auxSystemSize[pressurizedDimensions] .+= 2;
+    auxSystemMainRegion = [1:i for i in sizeM]; auxSystemMainRegion[pressurizedDimensions] .= [2:N+1];
+    auxSystemIds = [1:i |> collect for i in auxSystemSize];
+    return auxSystemSize, auxSystemMainRegion, auxSystemIds
+end
+
+function auxNodesId(id::Int64, model::LBMmodel)
+    id += 1;
+    outIds = copy(model.boundaryConditionsParams.auxSystemIds);
+    outIds[model.boundaryConditionsParams.pressurizedDimensions] .= [[id]]
+    return outIds
+end
+
+function auxNodesId(id::Vector{Int64}, model::LBMmodel)
+    id .+= 1;
+    outIds = copy(model.boundaryConditionsParams.auxSystemIds);
+    outIds[model.boundaryConditionsParams.pressurizedDimensions] .= [id]
+    return outIds
+end
+
+function auxNodesCreate(M::Array, model::LBMmodel)
+    paddedM = [zero(M[1]) for _ in zeros(model.boundaryConditionsParams.auxSystemSize...)];
+    paddedM[model.boundaryConditionsParams.auxSystemMainRegion...] = M
+    return paddedM
 end
 
 #= ==========================================================================================

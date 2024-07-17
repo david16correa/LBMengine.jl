@@ -115,7 +115,7 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}};
         xub = 1,
         walledDimensions = [2],
         pressurizedDimensions = [1],
-        pressuresHL = (2, 1)
+        pressuresHL = (1.1/3, 0.9/3)
     ) 
 
     sizeM = size(ρ)
@@ -151,12 +151,9 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}};
     bounceBackParams = (; wallRegion, streamingInvasionRegions, oppositeVectorId);
 
     #= ---------------- boundary conditions (pressure difference) ---------------- =#
-    auxSystemSize = [s for s in sizeM]; auxSystemSize[pressurizedDimensions] .+= 2;
-    auxSystemMainRegion = [1:i for i in sizeM]; auxSystemMainRegion[pressurizedDimensions] .= [2:N+1];
-    auxSystemIds = [1:i |> collect for i in auxSystemSize];
-    ρH = [pressuresHL[1]/c2_s for _ in zeros(sizeM[1:end-1]...)] # isothermal equation of state p = c²_s ρ
-    ρL = [pressuresHL[2]/c2_s for _ in zeros(sizeM[1:end-1]...)] # isothermal equation of state p = c²_s ρ
-    pressureDiffParams = (; auxSystemSize, auxSystemMainRegion, auxSystemIds, pressurizedDimensions, ρH, ρL);
+    auxSystemSize, auxSystemMainRegion, auxSystemIds = auxNodesPrep(sizeM, pressurizedDimensions, N)
+    ρH, ρL = [pressuresHL[1]/c2_s for _ in zeros(sizeM[1:end-1]...)], [pressuresHL[2]/c2_s for _ in zeros(sizeM[1:end-1]...)] # isothermal equation of state p = c²_s ρ
+    pressureDiffParams = (; auxSystemSize, auxSystemMainRegion, auxSystemIds, pressurizedDimensions, ρH, ρL, N);
 
     #= ------------------------ the model is initialized ------------------------ =#
     model = LBMmodel(spaceTime, time, fluidParams, padded_ρ, padded_ρ.*u, u, [initialDistributions], velocities, merge(bounceBackParams, pressureDiffParams));
