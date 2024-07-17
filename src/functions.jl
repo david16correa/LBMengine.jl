@@ -23,7 +23,7 @@ end
 function hydroVariablesUpdate!(model::LBMmodel)
     model.ρ = massDensity(model)
     model.ρu = momentumDensity(model)
-    model.u = [[0., 0] for _ in model.ρ]
+    model.u = [[0.; 0] for _ in model.ρ]
     fluidIndices = (model.ρ .≈ 0) .|> b -> !b;
     model.u[fluidIndices] = model.ρu[fluidIndices] ./ model.ρ[fluidIndices]
 end
@@ -38,6 +38,18 @@ function equilibrium(id::Int64, model::LBMmodel)
     firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
     secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.fluidParams.c2_s) .+ 1
     return secondStep .* (wi * model.ρ)
+end
+
+function equilibrium(id::Int64, model::LBMmodel, ρ::Array{Float64}, u::Array{Vector{Float64}})
+    # the id is checked
+    checkIdInModel(id, model)
+    # the quantities to be used are saved separately
+    ci = model.velocities[id].c
+    wi = model.velocities[id].w
+    # the equilibrium distribution is found step by step and returned
+    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*model.fluidParams.c2_s) .+ 1
+    return secondStep .* (wi * ρ)
 end
 
 "calculates Ω at the last recorded time!"
@@ -96,11 +108,20 @@ function initialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidPara
     return secondStep .* (wi * ρ)
 end
 
-function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "auto", τ_Δt = 0.8, sideLength = 1, walledDimensions = [-1])
+function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; 
+        velocities = "auto",
+        τ_Δt = 0.8,
+        xlb = 0,
+        xub = 1,
+        walledDimensions = [2],
+        pressurizedDimensions = [1],
+        pressuresHL = (2, 1)
+    ) 
+
     sizeM = size(ρ)
     prod(i == j for i in sizeM for j in sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
 
-    dims, len = length(sizeM), sizeM[1];
+    dims, N = length(sizeM), sizeM[1];
 
     # if dimensions are too large, and the user did not define a velocity set, then there's an error
     if (dims >= 4) && !(velocities isa Vector{LBMvelocity})
@@ -112,7 +133,7 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
 
     #= ---------------- space and time variables are initialized ---------------- =#
     # A vector for the coordinates (which are all assumed to be equal) is created, and its step is stored
-    x = range(0, stop = sideLength, length = len); Δx = Δt = step(x);
+    x = range(xlb, stop = xub, length = N); Δx = Δt = step(x);
     Δt_Δx = 1; # Δt/Δx
     spaceTime = (; x, Δx, Δt, Δt_Δx, dims); 
     time = [0.];
@@ -127,10 +148,18 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}}; velocities = "
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
     streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
-    boundaryConditionsParams = (; wallRegion, streamingInvasionRegions, oppositeVectorId);
+    bounceBackParams = (; wallRegion, streamingInvasionRegions, oppositeVectorId);
+
+    #= ---------------- boundary conditions (pressure difference) ---------------- =#
+    auxSystemSize = [s for s in sizeM]; auxSystemSize[pressurizedDimensions] .+= 2;
+    auxSystemMainRegion = [1:i for i in sizeM]; auxSystemMainRegion[pressurizedDimensions] .= [2:N+1];
+    auxSystemIds = [1:i |> collect for i in auxSystemSize];
+    ρH = [pressuresHL[1]/c2_s for _ in zeros(sizeM[1:end-1]...)] # isothermal equation of state p = c²_s ρ
+    ρL = [pressuresHL[2]/c2_s for _ in zeros(sizeM[1:end-1]...)] # isothermal equation of state p = c²_s ρ
+    pressureDiffParams = (; auxSystemSize, auxSystemMainRegion, auxSystemIds, pressurizedDimensions, ρH, ρL);
 
     #= ------------------------ the model is initialized ------------------------ =#
-    model = LBMmodel(spaceTime, time, fluidParams, padded_ρ, padded_ρ.*u, u, [initialDistributions], velocities, boundaryConditionsParams);
+    model = LBMmodel(spaceTime, time, fluidParams, padded_ρ, padded_ρ.*u, u, [initialDistributions], velocities, merge(bounceBackParams, pressureDiffParams));
     # to ensure consitensy, ρ, ρu and u are all found using the initial conditions of f_i
     hydroVariablesUpdate!(model);
     # if either ρ or u changed, the user is notified
