@@ -60,6 +60,18 @@ function collisionOperator(id::Int64, model::LBMmodel)
     return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
 end
 
+"calculates Ω at the last recorded time!"
+function collisionOperator(id::Int64, model::LBMmodel, ρ::Array{Float64}, u::Array{Vector{Float64}})
+    # the id is checked
+    checkIdInModel(id, model)
+    # the Bhatnagar-Gross-Krook collision opeartor is used
+    equilibriumDistribution = equilibrium(id, model, ρ, u);
+    collisionedDistribution = -model.distributions[end][id] + equilibriumDistribution[model.boundaryConditionsParams.auxSystemMainRegion...] |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
+
+    # the collisioned distrubutioned and the equilibrium distributions are returned
+    return collisionedDistribution, equilibriumDistribution
+end
+
 function LBMpropagate!(model::LBMmodel)
     # collision (or relaxation)
     collisionedDistributions = [model.distributions[end][id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 

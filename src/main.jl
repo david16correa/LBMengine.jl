@@ -25,7 +25,7 @@ x = range(-1, stop = 1, length = len); y = copy(x);
 u = [gaussian(i,j) * [1.; 1]  for i in x, j in x];
 #=u = [[-gx(j) * i; g(j)] for i in x, j in x];=#
 
-model = modelInit(ρ, u; walledDimensions = [ ]);
+model = modelInit(ρ, u; walledDimensions = [1]);
 
 @time for _ in 1:201
     LBMpropagate!(model);
