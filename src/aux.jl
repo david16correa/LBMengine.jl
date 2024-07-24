@@ -187,17 +187,17 @@ function anim8fluidVelocity(model::LBMmodel)
 
     mkdir("tmp")
 
+    us = [] |> Vector{Matrix{Vector{Float64}}};
     for t in eachindex(model.time)
-        ρ = massDensity(model; time = t)
-        ρu = momentumDensity(model; time = t) 
-        u = ρu ./ ρ .|> v -> isnan(v[1]) ? [0;0.] : v
+        hydroVariablesUpdate!(model; time = t);
+        append!(us, [model.u]);
+    end
 
-        if t == 1 
-            maximumFluidSpeed = norm.(u) |> maximum
-        end
+    maximumFluidSpeed = (us .|> M -> norm.(M)) .|> maximum |> maximum
 
+    for t in eachindex(model.time)
         #----------------------------------heatmap and colorbar---------------------------------
-        animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(u), alpha = 0.7,
+        animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(us[t]), alpha = 0.7,
             colorrange = (0, maximumFluidSpeed), 
             highclip = :red, # truncate the colormap 
             axis=(
@@ -211,7 +211,7 @@ function anim8fluidVelocity(model::LBMmodel)
         #--------------------------------------vector field---------------------------------------
         vectorFieldX = model.spaceTime.x[1:10:end];
         pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
-        vec = [u[i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
+        vec = [us[t][i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
         vec = 0.07 .* vec ./ maximumFluidSpeed;
         arrows!(animationFig[1,1], pos, vec, 
             arrowsize = 10, 
@@ -234,13 +234,14 @@ function anim8massDensity(model::LBMmodel)
     ρs = [massDensity(model; time = t) for t in eachindex(model.time)]
 
     maximumMassDensity = (ρs .|> maximum) |> maximum
+    minimumMassDensity = [ρ[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for ρ in ρs] |> minimum |> x -> maximum([0, x])
 
     mkdir("tmp")
 
     for t in eachindex(model.time)
         #----------------------------------heatmap and colorbar---------------------------------
         animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, ρs[t], 
-            colorrange = (0, maximumMassDensity), 
+            colorrange = (minimumMassDensity, maximumMassDensity), 
             lowclip = :red, # truncate the colormap 
             axis=(
               title = "mass density, t = $(model.time[t] |> x -> round(x; digits = 2))",
