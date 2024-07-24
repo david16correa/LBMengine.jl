@@ -20,9 +20,9 @@ function momentumDensity(model::LBMmodel; time = -1)
     end
 end
 
-function hydroVariablesUpdate!(model::LBMmodel)
-    model.ρ = massDensity(model)
-    model.ρu = momentumDensity(model)
+function hydroVariablesUpdate!(model::LBMmodel; time = -1)
+    model.ρ = massDensity(model; time = time)
+    model.ρu = momentumDensity(model; time = time)
     model.u = [[0.; 0] for _ in model.ρ]
     fluidIndices = (model.ρ .≈ 0) .|> b -> !b;
     model.u[fluidIndices] = model.ρu[fluidIndices] ./ model.ρ[fluidIndices]
@@ -53,47 +53,66 @@ function equilibrium(id::Int64, model::LBMmodel, ρ::Array{Float64}, u::Array{Ve
 end
 
 "calculates Ω at the last recorded time!"
-function collisionOperator(id::Int64, model::LBMmodel)
+function collisionOperator(id::Int64, model::LBMmodel; returnEquilibriumDistribution = false)
     # the id is checked
     checkIdInModel(id, model)
-    # the Bhatnagar-Gross-Krook collision opeartor is used
-    return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
-end
-
-"calculates Ω at the last recorded time!"
-function collisionOperator(id::Int64, model::LBMmodel, ρ::Array{Float64}, u::Array{Vector{Float64}})
-    # the id is checked
-    checkIdInModel(id, model)
-    # the Bhatnagar-Gross-Krook collision opeartor is used
-    equilibriumDistribution = equilibrium(id, model, ρ, u);
-    collisionedDistribution = -model.distributions[end][id] + equilibriumDistribution[model.boundaryConditionsParams.auxSystemMainRegion...] |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
-
-    # the collisioned distrubutioned and the equilibrium distributions are returned
-    return collisionedDistribution, equilibriumDistribution
+    # the Bhatnagar-Gross-Krook collision opeartor is used, returning the equilibrium distribution if needed
+    if returnEquilibriumDistribution
+        equilibriumDistribution = equilibrium(id, model)
+        return equilibriumDistribution, -model.distributions[end][id] + equilibriumDistribution |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
+    else
+        return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
+    end
 end
 
 function LBMpropagate!(model::LBMmodel)
-    # collision (or relaxation)
-    collisionedDistributions = [model.distributions[end][id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 
+    #------------------------------------------collision step------------------------------------------
+    # auxilary nodes are created to deal with pressure differences
+    auxNodesCreate!(model);
+    # the equilibrium distributions and the collisioned distributions are found; their values at the auxilary nodes are not correct at this point
+    equilibriumDistributions, collisionedDistributions = 
+        [collisionOperator(id, model; returnEquilibriumDistribution = true) for id in eachindex(model.velocities)] |> 
+        feqΩ -> ([T[1] for T in feqΩ], model.distributions[end] .+ [T[2] for T in feqΩ]);
 
+    # non equilibrium distributions are found; these are used to find the collisioned distributions at the auxilary nodes
+    nonEquilibriumDistributions = collisionedDistributions .- equilibriumDistributions;
+    for id in eachindex(nonEquilibriumDistributions)
+        nonEquilibriumDistributions[id][auxNodesId(0, model)...] = nonEquilibriumDistributions[id][auxNodesId(model.boundaryConditionsParams.N, model)...];
+        nonEquilibriumDistributions[id][auxNodesId(model.boundaryConditionsParams.N+1, model)...] = nonEquilibriumDistributions[id][auxNodesId(1, model)...];
+    end
+    # now the collisioned distributions everywhere are known; the rest is standard procedure
+    collisionedDistributions = equilibriumDistributions .+ nonEquilibriumDistributions;
+
+    #---------------------------------------------stream step--------------------------------------------
+    # propagated distributions will be saved in a new vector
+    streamedDistributions = [] |> LBMdistributions ;
+
+    for id in eachindex(model.velocities)
+        streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c * model.spaceTime.Δt_Δx) |>
+            distribution -> auxNodesRemove(distribution, model)
+        streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
+        append!(streamedDistributions, [streamedDistribution])
+
+        collisionedDistributions[id] = auxNodesRemove(collisionedDistributions[id], model)
+    end
+
+    #----------------------------------streaming invasion exchange step---------------------------------
     # propagated distributions will be saved in a new vector
     propagatedDistributions = [] |> LBMdistributions ;
 
-    # streaming (or propagation), with streaming invasion exchange
     for id in eachindex(model.velocities)
-        # distributions are initially streamed, and the wall regions are imposed to vanish
-        streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c * model.spaceTime.Δt_Δx)
-        streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
-
         # the invasion region of the fluid with opposite momentum is retrieved
         conjugateInvasionRegion, conjugateId = model.boundaryConditionsParams |> params -> (params.streamingInvasionRegions[params.oppositeVectorId[id]], params.oppositeVectorId[id])
 
         # streaming invasion exchange step is performed
-        streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
+        streamedDistributions[id][conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
 
         # the resulting propagation is appended to the propagated distributions
-        append!(propagatedDistributions, [streamedDistribution]);
+        append!(propagatedDistributions, [streamedDistributions[id]]);
     end
+
+    # auxilary nodes are removed
+    auxNodesRemove!(model);
 
     # the new distributions and time are appended
     append!(model.distributions, [propagatedDistributions]);
@@ -127,7 +146,7 @@ function modelInit(ρ::Array{Float64}, u::Array{Vector{Float64}};
         xub = 1,
         walledDimensions = [2],
         pressurizedDimensions = [1],
-        pressuresHL = (1.1/3, 0.9/3)
+        pressuresHL = (1.1/3, 1/3)
     ) 
 
     sizeM = size(ρ)
