@@ -137,6 +137,34 @@ function auxNodesCreate(M::Array, model::LBMmodel)
     return paddedM
 end
 
+function auxNodesCreate!(model::LBMmodel)
+    N = model.boundaryConditionsParams.N
+
+    model.ρ = auxNodesCreate(model.ρ, model)
+    model.ρ[auxNodesId(0, model)...] = model.ρ[auxNodesId(N, model)...] |> ρN -> ρN + reshape(model.boundaryConditionsParams.ρH, size(ρN)) .- mean(ρN);
+    model.ρ[auxNodesId(N+1, model)...] = model.ρ[auxNodesId(1, model)...] |> ρ1 -> ρ1 + reshape(model.boundaryConditionsParams.ρL, size(ρ1)) .- mean(ρ1);
+
+    model.ρu = auxNodesCreate(model.ρu, model)
+    model.ρu[auxNodesId(0, model)...] = model.ρu[auxNodesId(N, model)...];
+    model.ρu[auxNodesId(N+1, model)...] = model.ρu[auxNodesId(1, model)...];
+
+    model.u = [zero(model.ρu[1]) for _ in model.ρu];
+    ((model.ρ .≈ 0) .|> b -> !b) |> ids -> (model.u[ids] = model.ρu[ids] ./ model.ρ[ids]);
+
+    model.distributions[end] = [auxNodesCreate(distribution, model) for distribution in model.distributions[end]]
+end
+
+function auxNodesRemove(M::Array, model::LBMmodel)
+    return M[auxNodesId(1:model.boundaryConditionsParams.N |> collect, model)...]
+end
+
+function auxNodesRemove!(model::LBMmodel)
+    model.ρ = auxNodesRemove(model.ρ, model)
+    model.ρu = auxNodesRemove(model.ρu, model)
+    model.u = auxNodesRemove(model.u, model)
+    model.distributions[end] = [auxNodesRemove(distribution, model) for distribution in model.distributions[end]]
+end
+
 #= ==========================================================================================
 =============================================================================================
 graphics stuff
