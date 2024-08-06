@@ -4,6 +4,6 @@
 
 Lattice Boltzmann Methods engine for simulation of soft flowing matter.
 
-| ![bigWalls1](assets/bigWalls1.jpg) | ![shpere1](assets/sphere1.jpg) | ![walls1](assets/walls1.jpg) |
+| ![bigWalls1](assets/bigWallsFluidVelocity.jpg) | ![shpere1](assets/sphereFluidVelocity.jpg) | ![walls1](assets/wallsFluidVelocity.jpg) |
 |-----|------|-----|
-| ![bigWalls2](assets/bigWalls2.jpg) | ![shpere2](assets/sphere2.jpg) | ![walls2](assets/walls2.jpg) |
+| ![bigWalls2](assets/bigWallsMassDensity.jpg) | ![shpere2](assets/sphereMassDensity.jpg) | ![walls2](assets/wallsMassDensity.jpg) |
