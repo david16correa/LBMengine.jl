@@ -137,6 +137,16 @@ function auxNodesCreate(M::Array, model::LBMmodel)
     return paddedM
 end
 
+function auxNodesMassDensityCreate(M::Array{Float64}, model::LBMmodel)
+    N = model.boundaryConditionsParams.N
+
+    M = auxNodesCreate(M, model)
+    M[auxNodesId(0, model)...] = M[auxNodesId(N, model)...] |> ρN -> ρN + reshape(model.boundaryConditionsParams.ρH, size(ρN)) .- mean(ρN);
+    M[auxNodesId(N+1, model)...] = M[auxNodesId(1, model)...] |> ρ1 -> ρ1 + reshape(model.boundaryConditionsParams.ρL, size(ρ1)) .- mean(ρ1);
+
+    return M
+end
+
 function auxNodesCreate!(model::LBMmodel)
     N = model.boundaryConditionsParams.N
 
@@ -201,7 +211,8 @@ function anim8fluidVelocity(model::LBMmodel)
             colorrange = (0, maximumFluidSpeed), 
             highclip = :red, # truncate the colormap 
             axis=(
-              title = "fluid velocity, t = $(model.time[t] |> x -> round(x; digits = 2))",
+                title = "fluid velocity, t = $(model.time[t] |> x -> round(x; digits = 2))",
+                aspect = 1,
             ),
         );
         animationAx.xlabel = "x"; animationAx.ylabel = "y";
@@ -212,6 +223,55 @@ function anim8fluidVelocity(model::LBMmodel)
         vectorFieldX = model.spaceTime.x[1:10:end];
         pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
         vec = [us[t][i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
+        vec = 0.07 .* vec ./ maximumFluidSpeed;
+        arrows!(animationFig[1,1], pos, vec, 
+            arrowsize = 10, 
+            align = :center
+        );
+        xlims!(xlb, xub);
+        ylims!(xlb, xub);
+        save("tmp/$(t).png", animationFig)
+    end
+
+    run(`./createAnim.sh`)
+    name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
+    run(`mv anims/output.mp4 $(name)`)
+end
+
+"The animation of the fluid velocity evolution is created."
+function anim8momentumDensity(model::LBMmodel)
+    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+
+    maximumFluidSpeed = 1.;
+
+    mkdir("tmp")
+
+    ρus = [] |> Vector{Matrix{Vector{Float64}}};
+    for t in eachindex(model.time)
+        hydroVariablesUpdate!(model; time = t);
+        append!(ρus, [model.ρu]);
+    end
+
+    maximumFluidSpeed = (ρus .|> M -> norm.(M)) .|> maximum |> maximum
+
+    for t in eachindex(model.time)
+        #----------------------------------heatmap and colorbar---------------------------------
+        animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(ρus[t]), alpha = 0.7,
+            colorrange = (0, maximumFluidSpeed), 
+            highclip = :red, # truncate the colormap 
+            axis=(
+                title = "momentum density, t = $(model.time[t] |> x -> round(x; digits = 2))",
+                aspect = 1,
+            ),
+        );
+        animationAx.xlabel = "x"; animationAx.ylabel = "y";
+        Colorbar(animationFig[:, end+1], hm,
+            #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
+        );
+        #--------------------------------------vector field---------------------------------------
+        vectorFieldX = model.spaceTime.x[1:10:end];
+        pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
+        vec = [ρus[t][i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
         vec = 0.07 .* vec ./ maximumFluidSpeed;
         arrows!(animationFig[1,1], pos, vec, 
             arrowsize = 10, 
@@ -242,9 +302,10 @@ function anim8massDensity(model::LBMmodel)
         #----------------------------------heatmap and colorbar---------------------------------
         animationFig, animationAx, hm = heatmap(model.spaceTime.x, model.spaceTime.x, ρs[t], 
             colorrange = (minimumMassDensity, maximumMassDensity), 
-            lowclip = :red, # truncate the colormap 
+            lowclip = :black, # truncate the colormap 
             axis=(
-              title = "mass density, t = $(model.time[t] |> x -> round(x; digits = 2))",
+                title = "mass density, t = $(model.time[t] |> x -> round(x; digits = 2))",
+                aspect = 1,
             ),
         );
         animationAx.xlabel = "x"; animationAx.ylabel = "y";
@@ -259,6 +320,105 @@ function anim8massDensity(model::LBMmodel)
     run(`./createAnim.sh`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
+end
+
+"the fluid velocity plot is generated and saved."
+function plotFluidVelocity(model::LBMmodel)
+    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+
+    maximumFluidSpeed = (model.u .|> norm) |> maximum
+
+    #----------------------------------heatmap and colorbar---------------------------------
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(model.u), alpha = 0.7,
+        colorrange = (0, maximumFluidSpeed), 
+        highclip = :red, # truncate the colormap 
+        axis=(
+            title = "fluid velocity, t = $(model.time[end] |> x -> round(x; digits = 2))",
+            aspect = 1,
+        ),
+    );
+    ax.xlabel = "x"; ax.ylabel = "y";
+    Colorbar(fig[:, end+1], hm,
+        #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
+    );
+    #--------------------------------------vector field---------------------------------------
+    vectorFieldX = model.spaceTime.x[1:10:end];
+    pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
+    vec = [model.u[i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
+    vec = 0.07 .* vec ./ maximumFluidSpeed;
+    arrows!(fig[1,1], pos, vec, 
+        arrowsize = 10, 
+        align = :center
+    );
+    xlims!(xlb, xub);
+    ylims!(xlb, xub);
+
+    save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
+end
+
+"the momentum density plot is generated and saved."
+function plotMomentumDensity(model::LBMmodel)
+    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+
+    maximumMomentumDensity = (model.ρu .|> norm) |> maximum
+
+    #----------------------------------heatmap and colorbar---------------------------------
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(model.ρu), alpha = 0.7,
+        colorrange = (0, maximumMomentumDensity), 
+        highclip = :red, # truncate the colormap 
+        axis=(
+            title = "momentum density, t = $(model.time[end] |> x -> round(x; digits = 2))",
+            aspect = 1,
+        ),
+    );
+    ax.xlabel = "x"; ax.ylabel = "y";
+    Colorbar(fig[:, end+1], hm,
+        #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
+    );
+    #--------------------------------------vector field---------------------------------------
+    vectorFieldX = model.spaceTime.x[1:10:end];
+    pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
+    vec = [model.ρu[i,j] for i ∈ eachindex(model.spaceTime.x)[1:10:end] for j ∈ eachindex(model.spaceTime.x)[1:10:end]];
+    vec = 0.07 .* vec ./ maximumMomentumDensity;
+    arrows!(fig[1,1], pos, vec, 
+        arrowsize = 10, 
+        align = :center
+    );
+    xlims!(xlb, xub);
+    ylims!(xlb, xub);
+
+    save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
+end
+
+
+"the mass density plot is generated and saved."
+function plotMassDensity(model::LBMmodel)
+    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+
+    ρs = [massDensity(model; time = t) for t in eachindex(model.time)]
+
+    maximumMassDensity = (ρs .|> maximum) |> maximum
+    minimumMassDensity = [ρ[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for ρ in ρs] |> minimum |> x -> maximum([0, x])
+
+    t = length(model.time)
+
+    #----------------------------------heatmap and colorbar---------------------------------
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, ρs[t], 
+        colorrange = (minimumMassDensity, maximumMassDensity), 
+        lowclip = :black, # truncate the colormap 
+        axis=(
+            title = "mass density, t = $(model.time[t] |> x -> round(x; digits = 2))",
+            aspect = 1,
+        ),
+    );
+    ax.xlabel = "x"; ax.ylabel = "y";
+    Colorbar(fig[:, end+1], hm,
+        #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
+    );
+    xlims!(xlb, xub);
+    ylims!(xlb, xub);
+
+    save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
 end
 
 #= ==========================================================================================
