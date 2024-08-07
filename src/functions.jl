@@ -28,7 +28,7 @@ function hydroVariablesUpdate!(model::LBMmodel; time = :default)
     model.u[fluidIndices] = model.ρu[fluidIndices] ./ model.ρ[fluidIndices]
 end
 
-function equilibrium(id::Int64, model::LBMmodel; fluidIsCompressible = false)
+function equilibrium(id::Int64, model::LBMmodel)
     # the quantities to be used are saved separately
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
     wi = model.velocities[id].w
@@ -36,7 +36,7 @@ function equilibrium(id::Int64, model::LBMmodel; fluidIsCompressible = false)
     firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
     secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.fluidParams.c2_s) .+ 1
 
-    if fluidIsCompressible
+    if model.fluidParams.fluidIsCompressible
         return wi * (secondStep .* model.ρ)
     else
         return wi * model.ρ + wi * (model.initialConditions.ρ .* (secondStep .- 1))
@@ -106,7 +106,8 @@ function modelInit(;
     x = range(0, stop = 1, step = 0.01),
     Δt = :default, # default: Δt = Δx
     walledDimensions = [2], # walls around y axis (all non-walled dimensions are periodic!)
-    solidNodes = :default # default: no solid nodes (other than the walls)
+    solidNodes = :default, # default: no solid nodes (other than the walls)
+    fluidIsCompressible = false
 )
 
     # if default conditions were chosen, ρ is built. Otherwise its dimensions are verified
@@ -149,7 +150,7 @@ function modelInit(;
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
     τ = Δt * τ_Δt;
-    fluidParams = (; c_s, c2_s, c4_s, τ);
+    fluidParams = (; c_s, c2_s, c4_s, τ, fluidIsCompressible);
     wallRegion = wallNodes(ρ; walledDimensions = walledDimensions); 
     if solidNodes != :default && size(solidNodes) == size(wallRegion)
         wallRegion = wallRegion .|| solidNodes
