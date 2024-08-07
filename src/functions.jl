@@ -28,7 +28,7 @@ function hydroVariablesUpdate!(model::LBMmodel; time = :default)
     model.u[fluidIndices] = model.ρu[fluidIndices] ./ model.ρ[fluidIndices]
 end
 
-function equilibrium(id::Int64, model::LBMmodel)
+function equilibriumDistribution(id::Int64, model::LBMmodel)
     # the quantities to be used are saved separately
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
     wi = model.velocities[id].w
@@ -46,7 +46,7 @@ end
 "calculates Ω at the last recorded time!"
 function collisionOperator(id::Int64, model::LBMmodel; returnEquilibriumDistribution = false)
     # the Bhatnagar-Gross-Krook collision opeartor is used, returning the equilibrium distribution if needed
-    return -model.distributions[end][id] + equilibrium(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
+    return -model.distributions[end][id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
 end
 
 "Time evolution (without pressure diff)"
