@@ -134,8 +134,8 @@ function plotFluidVelocity(model::LBMmodel;
     end
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(u), alpha = 0.7,
-        colorrange = (0, maximumFluidSpeed), 
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(u)/model.fluidParams.c_s, alpha = 0.7,
+        colorrange = (0, maximumFluidSpeed/model.fluidParams.c_s), 
         highclip = :red, # truncate the colormap 
         axis=(
             title = "fluid velocity, t = $(t |> x -> round(x; digits = 2))",
@@ -143,17 +143,17 @@ function plotFluidVelocity(model::LBMmodel;
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
-    Colorbar(fig[:, end+1], hm,
+    Colorbar(fig[:, end+1], hm, label = "Mach number (M = u/cₛ)"
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
     #--------------------------------------vector field---------------------------------------
-    indices = range(1, stop = length(x), length = 10) |> collect .|> round .|> Int64
+    indices = range(1, stop = length(model.spaceTime.x), length = 10) |> collect .|> round .|> Int64
     vectorFieldX = model.spaceTime.x[indices];
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
     vec = [u[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
     vec = 0.07 .* vec ./ maximumFluidSpeed;
-    arrows!(fig[1,1], pos, vec, 
-        arrowsize = 10, 
+    arrows!(fig[1,1], pos, vec,
+        arrowsize = 10,
         align = :center
     );
     xlims!(xlb, xub);
@@ -197,7 +197,7 @@ function plotMomentumDensity(model::LBMmodel;
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
     #--------------------------------------vector field---------------------------------------
-    indices = range(1, stop = length(x), length = 10) |> collect .|> round .|> Int64
+    indices = range(1, stop = length(model.spaceTime.x), length = 10) |> collect .|> round .|> Int64
     vectorFieldX = model.spaceTime.x[indices];
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
     vec = [ρu[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];

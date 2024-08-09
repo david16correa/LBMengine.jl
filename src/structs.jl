@@ -21,7 +21,9 @@ mutable struct LBMmodel
     ρ::Array{Float64} # mass density
     ρu::Array{Vector{Float64}} # momentum density
     u::Array{Vector{Float64}} # fluid velocity
+    forceDensity::Array{Vector{Float64}}
     distributions::Vector{LBMdistributions} # f_i(x, t) for all t
     velocities::Vector{LBMvelocity} # c_i for all i
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
+    schemes::Vector{Symbol}
 end
