@@ -55,11 +55,11 @@ wall and fluid nodes functions
 =============================================================================================
 ========================================================================================== =#
 
-function wallNodes(ρ::Array{Float64};
+function wallNodes(massDensity::Array{Float64};
     walledDimensions = :default
 )
     # the size, dimensions, and side length of the density field are saved
-    sizeM = size(ρ)
+    sizeM = size(massDensity)
     dims, len = length(sizeM), sizeM[1];
 
     # the wallMap is initialized as an boolean array filled with zeroes,
@@ -120,21 +120,21 @@ end
 function plotFluidVelocity(model::LBMmodel;
     saveFig = true, 
     t = :default,
-    u = :default, 
+    fluidVelocity = :default, 
     maximumFluidSpeed = :default
 )
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
     (t == :default) ? (t = model.time[end]) : nothing
 
-    (u == :default) ? (u = model.u) : nothing
+    (fluidVelocity == :default) ? (fluidVelocity = model.fluidVelocity) : nothing
 
     if maximumFluidSpeed == :default
-        maximumFluidSpeed = (model.u .|> norm) |> maximum
+        maximumFluidSpeed = (model.fluidVelocity .|> norm) |> maximum
     end
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(u)/model.fluidParams.c_s, alpha = 0.7,
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(fluidVelocity)/model.fluidParams.c_s, alpha = 0.7,
         colorrange = (0, maximumFluidSpeed/model.fluidParams.c_s), 
         highclip = :red, # truncate the colormap 
         axis=(
@@ -147,10 +147,10 @@ function plotFluidVelocity(model::LBMmodel;
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
     #--------------------------------------vector field---------------------------------------
-    indices = range(1, stop = length(model.spaceTime.x), length = 10) |> collect .|> round .|> Int64
+    indices = range(1, stop = length(model.spaceTime.x), length = 11) |> collect .|> round .|> Int64
     vectorFieldX = model.spaceTime.x[indices];
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
-    vec = [u[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
+    vec = [fluidVelocity[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
     vec = 0.07 .* vec ./ maximumFluidSpeed;
     arrows!(fig[1,1], pos, vec,
         arrowsize = 10,
@@ -170,21 +170,21 @@ end
 function plotMomentumDensity(model::LBMmodel;
     saveFig = true, 
     t = :default,
-    ρu = :default, 
+    momentumDensity = :default, 
     maximumMomentumDensity = :default
 )
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
     (t == :default) ? (t = model.time[end]) : nothing
 
-    (ρu == :default) ? (ρu = model.ρu) : nothing
+    (momentumDensity == :default) ? (momentumDensity = model.momentumDensity) : nothing
 
     if maximumMomentumDensity == :default
-        maximumMomentumDensity = (model.ρu .|> norm) |> maximum
+        maximumMomentumDensity = (model.momentumDensity .|> norm) |> maximum
     end
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(ρu), alpha = 0.7,
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(momentumDensity), alpha = 0.7,
         colorrange = (0, maximumMomentumDensity), 
         highclip = :red, # truncate the colormap 
         axis=(
@@ -197,10 +197,10 @@ function plotMomentumDensity(model::LBMmodel;
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
     #--------------------------------------vector field---------------------------------------
-    indices = range(1, stop = length(model.spaceTime.x), length = 10) |> collect .|> round .|> Int64
+    indices = range(1, stop = length(model.spaceTime.x), length = 11) |> collect .|> round .|> Int64
     vectorFieldX = model.spaceTime.x[indices];
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
-    vec = [ρu[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
+    vec = [momentumDensity[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
     vec = 0.07 .* vec ./ maximumMomentumDensity;
     arrows!(fig[1,1], pos, vec, 
         arrowsize = 10, 
@@ -221,7 +221,7 @@ end
 function plotMassDensity(model::LBMmodel;
     saveFig = true,
     t = :default,
-    ρ = :default, 
+    massDensity = :default, 
     maximumMassDensity = :default,
     minimumMassDensity = :default
 )
@@ -229,18 +229,22 @@ function plotMassDensity(model::LBMmodel;
 
     (t == :default) ? (t = model.time[end]) : nothing
 
-    (ρ == :default) ? (ρ = model.ρ) : nothing
+    (massDensity == :default) ? (massDensity = model.massDensity) : nothing
 
     if maximumMassDensity == :default
-        maximumMassDensity = ρ |> maximum
+        maximumMassDensity = massDensity |> maximum
     end
 
     if minimumMassDensity == :default
-        minimumMassDensity = ρ |> minimum |> x -> maximum([0, x])
+        minimumMassDensity = massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum |> x -> maximum([0, x])
     end
 
+    minimumMassDensity ≈ maximumMassDensity && (minimumMassDensity = 0);
+    maximumMassDensity ≈ minimumMassDensity && (maximumMassDensity = 1);
+
+
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, ρ, 
+    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, massDensity, 
         colorrange = (minimumMassDensity, maximumMassDensity), 
         lowclip = :black, # truncate the colormap 
         axis=(
@@ -270,19 +274,19 @@ function anim8fluidVelocity(model::LBMmodel)
 
     mkdir("tmp")
 
-    us = [] |> Vector{Matrix{Vector{Float64}}};
+    fluidVelocities = [] |> Vector{Matrix{Vector{Float64}}};
     for t in eachindex(model.time)
         hydroVariablesUpdate!(model; time = t);
-        append!(us, [model.u]);
+        append!(fluidVelocities, [model.fluidVelocity]);
     end
 
-    maximumFluidSpeed = (us .|> M -> norm.(M)) .|> maximum |> maximum
+    maximumFluidSpeed = (fluidVelocities .|> M -> norm.(M)) .|> maximum |> maximum
 
     for t in eachindex(model.time)
         animationFig, animationAx = plotFluidVelocity(model; 
             saveFig = false, 
             t = model.time[t],
-            u = us[t],
+            fluidVelocity = fluidVelocities[t],
             maximumFluidSpeed = maximumFluidSpeed
         )
         save("tmp/$(t).png", animationFig)
@@ -301,19 +305,19 @@ function anim8momentumDensity(model::LBMmodel)
 
     mkdir("tmp")
 
-    ρus = [] |> Vector{Matrix{Vector{Float64}}};
+    momentumDensities = [] |> Vector{Matrix{Vector{Float64}}};
     for t in eachindex(model.time)
         hydroVariablesUpdate!(model; time = t);
-        append!(ρus, [model.ρu]);
+        append!(momentumDensities, [model.momentumDensity]);
     end
 
-    maximumMomentumDensity = (ρus .|> M -> norm.(M)) .|> maximum |> maximum
+    maximumMomentumDensity = (momentumDensities .|> M -> norm.(M)) .|> maximum |> maximum
 
     for t in eachindex(model.time)
         animationFig, animationAx = plotMomentumDensity(model; 
             saveFig = false,
             t = model.time[t],
-            ρu = ρus[t],
+            momentumDensity = momentumDensities[t],
             maximumMomentumDensity = maximumMomentumDensity
         )
         save("tmp/$(t).png", animationFig)
@@ -328,10 +332,10 @@ end
 function anim8massDensity(model::LBMmodel)
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
-    ρs = [massDensity(model; time = t) for t in eachindex(model.time)]
+    massDensities = [massDensityGet(model; time = t) for t in eachindex(model.time)]
 
-    maximumMassDensity = (ρs .|> maximum) |> maximum
-    minimumMassDensity = [ρ[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for ρ in ρs] |> minimum |> x -> maximum([0, x])
+    maximumMassDensity = (massDensities .|> maximum) |> maximum
+    minimumMassDensity = [massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for massDensity in massDensities] |> minimum |> x -> maximum([0, x])
 
     mkdir("tmp")
 
@@ -339,7 +343,7 @@ function anim8massDensity(model::LBMmodel)
         animationFig, animationAx = plotMassDensity(model; 
             saveFig = false,
             t = model.time[t],
-            ρ = ρs[t],
+            massDensity = massDensities[t],
             maximumMassDensity = maximumMassDensity,
             minimumMassDensity = minimumMassDensity
         )
