@@ -18,12 +18,12 @@ mutable struct LBMmodel
     time::Vector{Float64} # not in spaceTime bc NamedTuple are immutable!
     fluidParams::NamedTuple # speed of sound and its powers (c_s, c2_s, c4_s), relaxation time (τ)
     initialConditions::NamedTuple # ρ₀
-    ρ::Array{Float64} # mass density
-    ρu::Array{Vector{Float64}} # momentum density
-    u::Array{Vector{Float64}} # fluid velocity
+    massDensity::Array{Float64} # mass density
+    momentumDensity::Array{Vector{Float64}} # momentum density
+    fluidVelocity::Array{Vector{Float64}} # fluid velocity
     forceDensity::Array{Vector{Float64}}
     distributions::Vector{LBMdistributions} # f_i(x, t) for all t
     velocities::Vector{LBMvelocity} # c_i for all i
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
-    schemes::Vector{Symbol}
+    schemes::Vector{Symbol} # schemes implemented thus far: :bounceBack (boundary conditions, stable), :guo (forcing, stable), :shan (forcing, unstable)
 end
