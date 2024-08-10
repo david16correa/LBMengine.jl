@@ -4,15 +4,15 @@ general methods
 =============================================================================================
 ========================================================================================== =#
 
-function massDensity(model::LBMmodel; time = :default)
+function massDensityGet(model::LBMmodel; time = :default)
     if time == :default
         return sum(distribution for distribution in model.distributions[end])
     else
         return sum(distribution for distribution in model.distributions[time])
     end
 end
-
-function momentumDensity(model::LBMmodel; time = :default, useEquilibriumScheme = false)
+ 
+function momentumDensityGet(model::LBMmodel; time = :default, useEquilibriumScheme = false)
     # en estep punto se dará por hecho que la fuerza es constante!!
     if time == :default
         bareMomentum = sum(scalarFieldTimesVector(model.distributions[end][id], model.velocities[id].c) for id in eachindex(model.velocities))
@@ -22,7 +22,7 @@ function momentumDensity(model::LBMmodel; time = :default, useEquilibriumScheme 
 
     if useEquilibriumScheme
         if :shan in model.schemes
-            return bareMomentum + model.fluidParams.τ * model.spaceTime.Δt^2 * model.forceDensity
+            return bareMomentum + model.fluidParams.relaxationTime * model.spaceTime.Δt^2 * model.forceDensity
         end
         if :guo in model.schemes
             return bareMomentum + 0.5 * model.spaceTime.Δt * model.forceDensity
@@ -37,11 +37,11 @@ function momentumDensity(model::LBMmodel; time = :default, useEquilibriumScheme 
 end
 
 function hydroVariablesUpdate!(model::LBMmodel; time = :default, useEquilibriumScheme = false)
-    model.ρ = massDensity(model; time = time)
-    model.ρu = momentumDensity(model; time = time, useEquilibriumScheme = useEquilibriumScheme)
-    model.u = [[0.; 0] for _ in model.ρ]
-    fluidIndices = (model.ρ .≈ 0) .|> b -> !b;
-    model.u[fluidIndices] = model.ρu[fluidIndices] ./ model.ρ[fluidIndices]
+    model.massDensity = massDensityGet(model; time = time)
+    model.momentumDensity = momentumDensityGet(model; time = time, useEquilibriumScheme = useEquilibriumScheme)
+    model.fluidVelocity = [[0.; 0] for _ in model.massDensity]
+    fluidIndices = (model.massDensity .≈ 0) .|> b -> !b;
+    model.fluidVelocity[fluidIndices] = model.momentumDensity[fluidIndices] ./ model.massDensity[fluidIndices]
 end
 
 function equilibriumDistribution(id::Int64, model::LBMmodel)
@@ -49,18 +49,18 @@ function equilibriumDistribution(id::Int64, model::LBMmodel)
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
     wi = model.velocities[id].w
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(model.u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(model.u, model.u)/(2*model.fluidParams.c2_s) .+ 1
+    firstStep = vectorFieldDotVector(model.fluidVelocity, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(model.fluidVelocity, model.fluidVelocity)/(2*model.fluidParams.c2_s)
 
-    model.fluidParams.fluidIsCompressible && return wi * (secondStep .* model.ρ)
+    model.fluidParams.isFluidCompressible && return wi * ((secondStep .+ 1) .* model.massDensity)
 
-    return wi * model.ρ + wi * (model.initialConditions.ρ .* (secondStep .- 1))
+    return wi * model.massDensity + wi * (model.initialConditions.massDensity .* secondStep)
 end
 
 "calculates Ω at the last recorded time!"
 function collisionOperator(id::Int64, model::LBMmodel)
     # the Bhatnagar-Gross-Krook collision opeartor is used
-    BGK = -model.distributions[end][id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.τ * f
+    BGK = -model.distributions[end][id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.relaxationTime * f
 
     # forcing terms are added
     if :guo in model.schemes
@@ -75,10 +75,10 @@ function guoForcingTerm(id::Int64, model::LBMmodel)
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
     wi = model.velocities[id].w
     # the forcing term is found
-    firstTerm = [ci - u for u in model.u] / model.fluidParams.c2_s
-    secondTerm = vectorFieldDotVector(model.u, ci) |> udotci -> [ci * v for v in udotci]/model.fluidParams.c4_s
+    firstTerm = [ci - u for u in model.fluidVelocity] / model.fluidParams.c2_s
+    secondTerm = vectorFieldDotVector(model.fluidVelocity, ci) |> udotci -> [ci * v for v in udotci]/model.fluidParams.c4_s
     intermediateStep = vectorFieldDotVectorField(firstTerm + secondTerm, model.forceDensity)
-    return (1 - model.spaceTime.Δt/(2 * model.fluidParams.τ)) * wi * intermediateStep
+    return (1 - model.spaceTime.Δt/(2 * model.fluidParams.relaxationTime)) * wi * intermediateStep * model.spaceTime.Δt
 end
 
 "Time evolution (without pressure diff)"
@@ -91,15 +91,17 @@ function tick!(model::LBMmodel)
 
     # streaming (or propagation), with streaming invasion exchange
     for id in eachindex(model.velocities)
-        # distributions are initially streamed, and the wall regions are imposed to vanish
+        # distributions are initially streamed
         streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c)
-        streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
 
-        # the invasion region of the fluid with opposite momentum is retrieved
-        conjugateInvasionRegion, conjugateId = model.boundaryConditionsParams |> params -> (params.streamingInvasionRegions[params.oppositeVectorId[id]], params.oppositeVectorId[id])
-
-        # streaming invasion exchange step is performed
-        streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
+        if :bounceBack in model.schemes
+            # the wall regions are imposed to vanish
+            streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
+            # the invasion region of the fluid with opposite momentum is retrieved
+            conjugateInvasionRegion, conjugateId = model.boundaryConditionsParams |> params -> (params.streamingInvasionRegions[params.oppositeVectorId[id]], params.oppositeVectorId[id])
+            # streaming invasion exchange step is performed
+            streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
+        end
 
         # the resulting propagation is appended to the propagated distributions
         append!(propagatedDistributions, [streamedDistribution]);
@@ -134,33 +136,33 @@ init methods
 ========================================================================================== =#
 
 "Initializes f_i to f^eq_i, which is the simplest strategy."
-function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidParams::NamedTuple, ρ::Array{Float64}, u::Array{Vector{Float64}}, Δx_Δt::Float64; kwInitialConditions = (; )) 
+function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluidParams::NamedTuple, massDensity::Array{Float64}, u::Array{Vector{Float64}}, Δx_Δt::Float64; kwInitialConditions = (; )) 
     # the quantities to be used are saved separately
     ci = velocities[id].c .* Δx_Δt
     wi = velocities[id].w
-    if :forceDensity in (kwInitialConditions |> typeof |> fieldnames)
-        consistencyTerm = [[0.; 0] for _ in ρ]
-        fluidIndices = (ρ .≈ 0) .|> b -> !b;
-        consistencyTerm[fluidIndices] = kwInitialConditions.forceDensity[fluidIndices] ./ ρ[fluidIndices]
+    if :forceDensity in (kwInitialConditions |> keys)
+        consistencyTerm = [[0.; 0] for _ in massDensity]
+        fluidIndices = (massDensity .≈ 0) .|> b -> !b;
+        consistencyTerm[fluidIndices] = kwInitialConditions.forceDensity[fluidIndices] ./ massDensity[fluidIndices]
         u -= 0.5 * kwInitialConditions.Δt * consistencyTerm
     end
     # the equilibrium distribution is found step by step and returned
     firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/fluidParams.c2_s + udotci.^2 / (2 * fluidParams.c4_s)
     secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*fluidParams.c2_s) .+ 1
-    return secondStep .* (wi * ρ)
+    return secondStep .* (wi * massDensity)
 end
 
 function modelInit(; 
-    ρ = :default, # default: ρ(x) = 1
-    u = :default, # default: u(x) = 0
+    massDensity = :default, # default: ρ(x) = 1
+    fluidVelocity = :default, # default: u(x) = 0
     velocities = :default, # default: chosen by dimensionality (D1Q3, D2Q9, or D3Q27)
-    τ_Δt = 0.8, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable
+    relaxationTimeRatio = 0.8, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable
     x = range(0, stop = 1, step = 0.01),
     dims = 2,
     Δt = :default, # default: Δt = Δx
-    walledDimensions = [2], # walls around y axis (all non-walled dimensions are periodic!)
+    walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
     solidNodes = :default, # default: no solid nodes (other than the walls)
-    fluidIsCompressible = false,
+    isFluidCompressible = false,
     forceDensity = :default, # default: F(0) = 0
     forcingScheme = :default # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
 )
@@ -168,22 +170,23 @@ function modelInit(;
     schemes = [] |> Vector{Symbol}
     # the keywords for the initial conditions are initialized
     kwInitialConditions = (; )
+    boundaryConditionsParams = (; )
 
     # if default conditions were chosen, ρ is built. Otherwise its dimensions are verified
-    if ρ == :default
-        ρ = [length(x) for _ in 1:dims] |> v -> ones(v...)
+    if massDensity == :default
+        massDensity = [length(x) for _ in 1:dims] |> v -> ones(v...)
     else
-        size(ρ) |> sizeM -> all(x -> x == sizeM[1], sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
+        size(massDensity) |> sizeM -> all(x -> x == sizeM[1], sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
     end
 
     # the side length is stored
-    N = size(ρ) |> sizeM -> sizeM[1];
+    N = size(massDensity) |> sizeM -> sizeM[1];
 
     # if default conditions were chosen, u is built. Otherwise its dimensions are verified
-    if u == :default
-        u = [[0. for _ in 1:dims] for _ in ρ];
+    if fluidVelocity == :default
+        fluidVelocity = [[0. for _ in 1:dims] for _ in massDensity];
     else
-        size(u) |> sizeU -> prod(i == j for i in sizeU for j in sizeU) ? nothing : error("All dimensions must have the same length! size(u) = $(sizeU)")
+        size(fluidVelocity) |> sizeU -> prod(i == j for i in sizeU for j in sizeU) ? nothing : error("All dimensions must have the same length! size(u) = $(sizeU)")
     end
 
     #= ------------------------ choosing the velocity set ----------------------- =#
@@ -209,64 +212,85 @@ function modelInit(;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
-    τ = Δt * τ_Δt;
-    fluidParams = (; c_s, c2_s, c4_s, τ, fluidIsCompressible);
-    wallRegion = wallNodes(ρ; walledDimensions = walledDimensions); 
-    if solidNodes != :default && size(solidNodes) == size(wallRegion)
-        wallRegion = wallRegion .|| solidNodes
-    end
-    padded_ρ = copy(ρ); padded_ρ[wallRegion] .= 0;
+    relaxationTime = Δt * relaxationTimeRatio;
+    fluidParams = (; c_s, c2_s, c4_s, relaxationTime, isFluidCompressible);
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
-    streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
-    boundaryConditionsParams = (; wallRegion, streamingInvasionRegions, oppositeVectorId);
+    wallRegion = [false for _ in massDensity]
+    if walledDimensions != :default
+        wallRegion = wallNodes(massDensity; walledDimensions = walledDimensions); 
+        if solidNodes != :default && size(solidNodes) == size(wallRegion)
+            wallRegion = wallRegion .|| solidNodes
+        end
+        massDensity[wallRegion] .= 0;
+        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
+        append!(schemes, [:bounceBack])
+        boundaryConditionsParams = merge(boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
+    end
 
     #= --------------------------- forcing scheme prep --------------------------- =#
-    (forcingScheme == :default) ? (forcingScheme = :guo) : nothing
+    # the default forcing scheme is Guo
+    forcingScheme == :default && (forcingScheme = :guo)
 
+    # by defualt, there is no force density
     if forceDensity == :default
         forceDensity = [[0., 0]];
-    elseif forceDensity isa Vector && size(forceDensity) == size(u[1])
-        forceDensity = [forceDensity |> Vector{Float64} for _ in ρ];
-        forceDensity[wallRegion] = [[0.,0] for _ in forceDensity[wallRegion]]
-        append!(schemes, [forcingScheme])
-        kwInitialConditions = merge(kwInitialConditions, (; forceDensity, Δt))
-    elseif size(forceDensity) == size(ρ)
-        append!(schemes, [forcingScheme])
+    # if a single vector is defined it is assumed the force denisty is constant
+    elseif forceDensity isa Vector && size(forceDensity) == size(fluidVelocity[1])
+        forceDensity = [forceDensity |> Vector{Float64} for _ in massDensity];
         forceDensity[wallRegion] = [[0.,0] for _ in forceDensity[wallRegion]]
         kwInitialConditions = merge(kwInitialConditions, (; forceDensity, Δt))
+
+        append!(schemes, [forcingScheme])
+    # if a force density field is defined its dimensions are verified
+    elseif size(forceDensity) == size(massDensity)
+        forceDensity[wallRegion] = [[0.,0] for _ in forceDensity[wallRegion]]
+        kwInitialConditions = merge(kwInitialConditions, (; forceDensity, Δt))
+
+        append!(schemes, [forcingScheme])
+    # if none of the above, the dimensions must be wrong
     else
         error("force density does not have consistent dimensions!")
     end
 
     #= --------------------------- initial distributions are found --------------------------- =#
-    initialDistributions = [findInitialConditions(id, velocities, fluidParams, padded_ρ, u, Δx_Δt; kwInitialConditions = kwInitialConditions) for id in eachindex(velocities)]
+    initialDistributions = [
+        findInitialConditions(
+            id,
+            velocities,
+            fluidParams,
+            massDensity,
+            fluidVelocity,
+            Δx_Δt; 
+            kwInitialConditions = kwInitialConditions
+        ) 
+    for id in eachindex(velocities)]
 
     #= ------------------------- the model is initialized ------------------------ =#
     model = LBMmodel(
-        spaceTime,
-        time,
-        fluidParams,
-        (; ρ = padded_ρ),
-        padded_ρ,
-        padded_ρ.*u,
-        u,
+        spaceTime, # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
+        time, # not in spaceTime bc NamedTuple are immutable!
+        fluidParams, # speed of sound and its powers (c_s, c2_s, c4_s), relaxation time (τ)
+        (; massDensity = massDensity), # ρ₀
+        massDensity, # mass density
+        massDensity.*fluidVelocity, # momentum density
+        fluidVelocity, # fluid velocity
         forceDensity,
-        [initialDistributions],
-        velocities,
-        boundaryConditionsParams,
-        schemes
+        [initialDistributions], # f_i(x, t) for all t
+        velocities, # c_i for all i
+        boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
+        schemes # schemes implemented thus far: :bounceBack (boundary conditions, stable), :guo (forcing, stable), :shan (forcing, unstable)
     );
 
-    #= ---------------------------- consistency check ---------------------------- =#
+#= ---------------------------- consistency check ---------------------------- =#
     # to ensure consistency, ρ, ρu and u are all found using the initial conditions of f_i
     hydroVariablesUpdate!(model);
     # if either ρ or u changed, the user is notified
     acceptableError = 0.01;
     fluidRegion = wallRegion .|> b -> !b;
-    error_ρ = (model.ρ[fluidRegion] - ρ[fluidRegion] .|> abs)  |> maximum
-    error_u = (model.u[fluidRegion] - u[fluidRegion] .|> norm) |> maximum
-    if (error_ρ > acceptableError) || (error_u > acceptableError)
+    error_massDensity = (model.massDensity[fluidRegion] - massDensity[fluidRegion] .|> abs)  |> maximum
+    error_fluidVelocity = (model.fluidVelocity[fluidRegion] - fluidVelocity[fluidRegion] .|> norm) |> maximum
+    if (error_massDensity > acceptableError) || (error_fluidVelocity > acceptableError)
         @warn "the initial conditions for ρ and u could not be met. New ones were defined."
     end
 
