@@ -272,7 +272,7 @@ function anim8fluidVelocity(model::LBMmodel)
 
     maximumFluidSpeed = 1.;
 
-    mkdir("tmp")
+    mkdir(".tmp")
 
     fluidVelocities = [] |> Vector{Matrix{Vector{Float64}}};
     for t in eachindex(model.time)
@@ -289,7 +289,7 @@ function anim8fluidVelocity(model::LBMmodel)
             fluidVelocity = fluidVelocities[t],
             maximumFluidSpeed = maximumFluidSpeed
         )
-        save("tmp/$(t).png", animationFig)
+        save(".tmp/$(t).png", animationFig)
     end
 
     run(`./createAnim.sh`)
@@ -303,7 +303,7 @@ function anim8momentumDensity(model::LBMmodel)
 
     maximumMomentumDensity = 1.;
 
-    mkdir("tmp")
+    mkdir(".tmp")
 
     momentumDensities = [] |> Vector{Matrix{Vector{Float64}}};
     for t in eachindex(model.time)
@@ -320,7 +320,7 @@ function anim8momentumDensity(model::LBMmodel)
             momentumDensity = momentumDensities[t],
             maximumMomentumDensity = maximumMomentumDensity
         )
-        save("tmp/$(t).png", animationFig)
+        save(".tmp/$(t).png", animationFig)
     end
 
     run(`./createAnim.sh`)
@@ -337,7 +337,7 @@ function anim8massDensity(model::LBMmodel)
     maximumMassDensity = (massDensities .|> maximum) |> maximum
     minimumMassDensity = [massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for massDensity in massDensities] |> minimum |> x -> maximum([0, x])
 
-    mkdir("tmp")
+    mkdir(".tmp")
 
     for t in eachindex(model.time)
         animationFig, animationAx = plotMassDensity(model; 
@@ -347,7 +347,7 @@ function anim8massDensity(model::LBMmodel)
             maximumMassDensity = maximumMassDensity,
             minimumMassDensity = minimumMassDensity
         )
-        save("tmp/$(t).png", animationFig)
+        save(".tmp/$(t).png", animationFig)
     end
 
     run(`./createAnim.sh`)
