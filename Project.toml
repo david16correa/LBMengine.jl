@@ -1,0 +1,9 @@
+name = "LBMengine"
+uuid = "90007c89-7b20-4556-8fff-3cddcc4526eb"
+authors = ["davidcorrea <david.correa.bsc@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
