@@ -7,8 +7,8 @@ module LBMengine
     include("aux.jl");
     include("functions.jl");
 
-    (!isdir("anims")) ? (mkdir("anims")) : nothing; (!isdir("anims/$(today())")) ? (mkdir("anims/$(today())")) : nothing;
-    (!isdir("figs")) ? (mkdir("figs")) : nothing; (!isdir("figs/$(today())")) ? (mkdir("figs/$(today())")) : nothing;
+    #= (!isdir("anims")) ? (mkdir("anims")) : nothing; (!isdir("anims/$(today())")) ? (mkdir("anims/$(today())")) : nothing; =#
+    #= (!isdir("figs")) ? (mkdir("figs")) : nothing; (!isdir("figs/$(today())")) ? (mkdir("figs/$(today())")) : nothing; =#
 
     # structs
     export LBMvelocity, LBMdistributions, LBMmodel
