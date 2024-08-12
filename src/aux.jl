@@ -254,7 +254,6 @@ function plotMassDensity(model::LBMmodel;
     minimumMassDensity ≈ maximumMassDensity && (minimumMassDensity = 0);
     maximumMassDensity ≈ minimumMassDensity && (maximumMassDensity = 1);
 
-
     #----------------------------------heatmap and colorbar---------------------------------
     fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, massDensity, 
         colorrange = (minimumMassDensity, maximumMassDensity), 
@@ -285,6 +284,7 @@ function anim8fluidVelocity(model::LBMmodel)
 
     maximumFluidSpeed = 1.;
 
+    isdir(".tmp") && run(`rm -r .tmp`)
     mkdir(".tmp")
 
     fluidVelocities = [] |> Vector{Matrix{Vector{Float64}}};
@@ -305,7 +305,6 @@ function anim8fluidVelocity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
-
     createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
     run(createVid)
@@ -320,6 +319,7 @@ function anim8momentumDensity(model::LBMmodel)
 
     maximumMomentumDensity = 1.;
 
+    isdir(".tmp") && run(`rm -r .tmp`)
     mkdir(".tmp")
 
     momentumDensities = [] |> Vector{Matrix{Vector{Float64}}};
@@ -357,6 +357,7 @@ function anim8massDensity(model::LBMmodel)
     maximumMassDensity = (massDensities .|> maximum) |> maximum
     minimumMassDensity = [massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for massDensity in massDensities] |> minimum |> x -> maximum([0, x])
 
+    isdir(".tmp") && run(`rm -r .tmp`)
     mkdir(".tmp")
 
     for t in eachindex(model.time)
@@ -369,7 +370,6 @@ function anim8massDensity(model::LBMmodel)
         )
         save(".tmp/$(t).png", animationFig)
     end
-
 
     createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
