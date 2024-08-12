@@ -293,7 +293,8 @@ function anim8fluidVelocity(model::LBMmodel)
     end
 
 
-    run(`$(pathof(LBMengine))/src/createAnim.sh`)
+    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
+    run(createVid)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
@@ -324,7 +325,8 @@ function anim8momentumDensity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
-    run(`$(pathof(LBMengine))/src/createAnim.sh`)
+    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
+    run(createVid)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
@@ -351,7 +353,9 @@ function anim8massDensity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
-    run(`$(pathof(LBMengine))/src/createAnim.sh`)
+
+    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
+    run(createVid)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
