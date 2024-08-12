@@ -292,7 +292,8 @@ function anim8fluidVelocity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
-    run(`./createAnim.sh`)
+
+    run(`$(pathof(LBMengine))/src/createAnim.sh`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
@@ -323,7 +324,7 @@ function anim8momentumDensity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
-    run(`./createAnim.sh`)
+    run(`$(pathof(LBMengine))/src/createAnim.sh`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
@@ -350,7 +351,7 @@ function anim8massDensity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
-    run(`./createAnim.sh`)
+    run(`$(pathof(LBMengine))/src/createAnim.sh`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
