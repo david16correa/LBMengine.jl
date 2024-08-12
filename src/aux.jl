@@ -320,7 +320,7 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
 end
 
 "The animation of the fluid velocity evolution is created."
-function anim8momentumDensity(model::LBMmodel)
+function anim8momentumDensity(model::LBMmodel; verbose = false)
 
     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
 
@@ -360,7 +360,7 @@ function anim8momentumDensity(model::LBMmodel)
 end
 
 "The animation of the mass density evolution is created."
-function anim8massDensity(model::LBMmodel)
+function anim8massDensity(model::LBMmodel; verbose = false)
 
     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
 
