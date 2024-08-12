@@ -108,6 +108,16 @@ graphics stuff
 =============================================================================================
 ========================================================================================== =#
 
+function createFigDirs()
+    !isdir("figs") && mkdir("figs")
+    !isdir("figs/$(today())") && mkdir("figs/$(today())")
+end
+
+function createAnimDirs()
+    !isdir("anims") && mkdir("anims")
+    !isdir("anims/$(today())") && mkdir("anims/$(today())")
+end
+
 function save_jpg(name::String, fig::Figure)
     namePNG = name*".png"
     nameJPG = name*".jpg"
@@ -160,6 +170,7 @@ function plotFluidVelocity(model::LBMmodel;
     ylims!(xlb, xub);
 
     if saveFig
+        createFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
     else
         return fig, ax
@@ -210,6 +221,7 @@ function plotMomentumDensity(model::LBMmodel;
     ylims!(xlb, xub);
 
     if saveFig
+        createFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
     else
         return fig, ax
@@ -260,6 +272,7 @@ function plotMassDensity(model::LBMmodel;
     ylims!(xlb, xub);
 
     if saveFig
+        createFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
     else
         return fig, ax
@@ -293,8 +306,10 @@ function anim8fluidVelocity(model::LBMmodel)
     end
 
 
+    createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
     run(createVid)
+    run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
@@ -325,8 +340,10 @@ function anim8momentumDensity(model::LBMmodel)
         save(".tmp/$(t).png", animationFig)
     end
 
+    createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
     run(createVid)
+    run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
@@ -354,8 +371,10 @@ function anim8massDensity(model::LBMmodel)
     end
 
 
+    createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
     run(createVid)
+    run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
     run(`mv anims/output.mp4 $(name)`)
 end
