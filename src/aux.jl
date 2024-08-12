@@ -310,6 +310,7 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
 
         verbose && t in outputTimes && print("\r t = $(model.time[end])")
     end
+    print("\r");
 
     createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
@@ -350,6 +351,7 @@ function anim8momentumDensity(model::LBMmodel; verbose = false)
 
         verbose && t in outputTimes && print("\r t = $(model.time[end])")
     end
+    print("\r");
 
     createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
@@ -386,6 +388,7 @@ function anim8massDensity(model::LBMmodel; verbose = false)
 
         verbose && t in outputTimes && print("\r t = $(model.time[end])")
     end
+    print("\r");
 
     createAnimDirs()
     createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
