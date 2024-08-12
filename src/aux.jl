@@ -279,7 +279,10 @@ function plotMassDensity(model::LBMmodel;
 end
 
 "The animation of the fluid velocity evolution is created."
-function anim8fluidVelocity(model::LBMmodel)
+function anim8fluidVelocity(model::LBMmodel; verbose = false)
+
+    verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
+
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
     maximumFluidSpeed = 1.;
@@ -295,6 +298,7 @@ function anim8fluidVelocity(model::LBMmodel)
 
     maximumFluidSpeed = (fluidVelocities .|> M -> norm.(M)) .|> maximum |> maximum
 
+
     for t in eachindex(model.time)
         animationFig, animationAx = plotFluidVelocity(model; 
             saveFig = false, 
@@ -303,6 +307,8 @@ function anim8fluidVelocity(model::LBMmodel)
             maximumFluidSpeed = maximumFluidSpeed
         )
         save(".tmp/$(t).png", animationFig)
+
+        verbose && t in outputTimes && print("\r t = $(model.time[end])")
     end
 
     createAnimDirs()
@@ -315,6 +321,9 @@ end
 
 "The animation of the fluid velocity evolution is created."
 function anim8momentumDensity(model::LBMmodel)
+
+    verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
+
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
     maximumMomentumDensity = 1.;
@@ -338,6 +347,8 @@ function anim8momentumDensity(model::LBMmodel)
             maximumMomentumDensity = maximumMomentumDensity
         )
         save(".tmp/$(t).png", animationFig)
+
+        verbose && t in outputTimes && print("\r t = $(model.time[end])")
     end
 
     createAnimDirs()
@@ -350,6 +361,9 @@ end
 
 "The animation of the mass density evolution is created."
 function anim8massDensity(model::LBMmodel)
+
+    verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
+
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
     massDensities = [massDensityGet(model; time = t) for t in eachindex(model.time)]
@@ -369,6 +383,8 @@ function anim8massDensity(model::LBMmodel)
             minimumMassDensity = minimumMassDensity
         )
         save(".tmp/$(t).png", animationFig)
+
+        verbose && t in outputTimes && print("\r t = $(model.time[end])")
     end
 
     createAnimDirs()
