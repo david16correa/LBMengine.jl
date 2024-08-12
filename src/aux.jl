@@ -308,7 +308,7 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
         )
         save(".tmp/$(t).png", animationFig)
 
-        verbose && t in outputTimes && print("\r t = $(model.time[end])")
+        verbose && t in outputTimes && print("\r t = $(model.time[t])")
     end
     print("\r");
 
@@ -349,7 +349,7 @@ function anim8momentumDensity(model::LBMmodel; verbose = false)
         )
         save(".tmp/$(t).png", animationFig)
 
-        verbose && t in outputTimes && print("\r t = $(model.time[end])")
+        verbose && t in outputTimes && print("\r t = $(model.time[t])")
     end
     print("\r");
 
@@ -386,7 +386,7 @@ function anim8massDensity(model::LBMmodel; verbose = false)
         )
         save(".tmp/$(t).png", animationFig)
 
-        verbose && t in outputTimes && print("\r t = $(model.time[end])")
+        verbose && t in outputTimes && print("\r t = $(model.time[t])")
     end
     print("\r");
 
