@@ -119,11 +119,19 @@ function createAnimDirs()
 end
 
 function save_jpg(name::String, fig::Figure)
-    namePNG = name*".png"
     nameJPG = name*".jpg"
-    save(namePNG, fig) 
-    run(`magick $namePNG $nameJPG`)
-    run(`rm $namePNG`)
+    save("output.png", fig)
+    if Sys.islinux()
+        run(`convert output.png $nameJPG`)
+        run(`rm output.png`);
+    elseif Sys.isapple()
+        run(`magick output.png $nameJPG`)
+        run(`rm output.png`);
+    elseif Sys.iswindows()
+        namePNG = name*".png"
+        run(`mv output.png $nameJPG`)
+        run(`rm output.png $namePNG`);
+    end
 end
 
 "the fluid velocity plot is generated and saved."
@@ -317,7 +325,7 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/output.mp4 $(name)`)
+    run(`mv anims/output.mp4 $(name)`);
 end
 
 "The animation of the fluid velocity evolution is created."
@@ -358,7 +366,7 @@ function anim8momentumDensity(model::LBMmodel; verbose = false)
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/output.mp4 $(name)`)
+    run(`mv anims/output.mp4 $(name)`);
 end
 
 "The animation of the mass density evolution is created."
@@ -395,7 +403,7 @@ function anim8massDensity(model::LBMmodel; verbose = false)
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/output.mp4 $(name)`)
+    run(`mv anims/output.mp4 $(name)`);
 end
 
 
