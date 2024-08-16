@@ -101,6 +101,14 @@ function tick!(model::LBMmodel)
             conjugateInvasionRegion, conjugateId = model.boundaryConditionsParams |> params -> (params.streamingInvasionRegions[params.oppositeVectorId[id]], params.oppositeVectorId[id])
             # streaming invasion exchange step is performed
             streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
+
+            if :movingWalls in model.schemes
+                ci = model.velocities[conjugateId].c .* model.spaceTime.Δx_Δt
+                wi = model.velocities[conjugateId].w
+                uwdotci = pbcMatrixShift(model.boundaryConditionsParams.solidNodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
+
+                streamedDistribution[conjugateInvasionRegion] -= (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
+            end
         end
 
         # the resulting propagation is appended to the propagated distributions
@@ -152,16 +160,17 @@ function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluid
     return secondStep .* (wi * massDensity)
 end
 
-function modelInit(; 
+function modelInit(;
     massDensity = :default, # default: ρ(x) = 1
     fluidVelocity = :default, # default: u(x) = 0
     velocities = :default, # default: chosen by dimensionality (D1Q3, D2Q9, or D3Q27)
     relaxationTimeRatio = 0.8, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable
     x = range(0, stop = 1, step = 0.01),
-    dims = 2,
+    dims = 2, # default mode must be added!!
     Δt = :default, # default: Δt = Δx
     walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
-    solidNodes = :default, # default: no solid nodes (other than the walls)
+    solidNodes = :default, # default: no solid nodes (other than the walls) 
+    solidNodeVelocity = :default, # default: static solids - u = [0,0]
     isFluidCompressible = false,
     forceDensity = :default, # default: F(0) = 0
     forcingScheme = :default # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
@@ -226,6 +235,16 @@ function modelInit(;
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
         append!(schemes, [:bounceBack])
         boundaryConditionsParams = merge(boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
+    end
+
+    #= -------------------- boundary conditions (moving walls) ------------------- =#
+
+    if solidNodeVelocity isa Array && solidNodeVelocity[1] isa Vector && size(solidNodeVelocity) == size(massDensity)
+        maskedArray = [[0.,0] for _ in solidNodeVelocity]
+        maskedArray[wallRegion] = solidNodeVelocity[wallRegion]
+        boundaryConditionsParams = merge(boundaryConditionsParams, (; solidNodeVelocity = maskedArray));
+
+        append!(schemes, [:movingWalls])
     end
 
     #= --------------------------- forcing scheme prep --------------------------- =#
