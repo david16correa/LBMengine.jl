@@ -45,7 +45,7 @@ function pbcIndexShift(indices::UnitRange{Int64}, Δ::Int64)
     end
 end
 
-function pbcMatrixShift(M::Union{Array{Float64}, SparseMatrixCSC, BitArray}, Δ::Vector{Int64})
+function pbcMatrixShift(M::Union{Array, SparseMatrixCSC, BitArray}, Δ::Vector{Int64})
     return size(M) |> sizeM -> [pbcIndexShift(1:sizeM[i], Δ[i]) for i in eachindex(sizeM)] |> shiftedIndices -> M[shiftedIndices...]
 end
 
@@ -120,17 +120,17 @@ end
 
 function save_jpg(name::String, fig::Figure)
     nameJPG = name*".jpg"
-    save("output.png", fig)
+    save(".output.png", fig)
     if Sys.islinux()
-        run(`convert output.png $nameJPG`)
-        run(`rm output.png`);
+        run(`convert .output.png $nameJPG`)
+        run(`rm .output.png`);
     elseif Sys.isapple()
-        run(`magick output.png $nameJPG`)
-        run(`rm output.png`);
+        run(`magick .output.png $nameJPG`)
+        run(`rm .output.png`);
     elseif Sys.iswindows()
         namePNG = name*".png"
-        run(`mv output.png $nameJPG`)
-        run(`rm output.png $namePNG`);
+        run(`mv .output.png $nameJPG`)
+        run(`rm .output.png $namePNG`);
     end
 end
 
@@ -321,11 +321,11 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
     print("\r");
 
     createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
+    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/output.mp4 $(name)`);
+    run(`mv anims/.output.mp4 $(name)`);
 end
 
 "The animation of the fluid velocity evolution is created."
@@ -362,11 +362,11 @@ function anim8momentumDensity(model::LBMmodel; verbose = false)
     print("\r");
 
     createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
+    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/output.mp4 $(name)`);
+    run(`mv anims/.output.mp4 $(name)`);
 end
 
 "The animation of the mass density evolution is created."
@@ -399,11 +399,11 @@ function anim8massDensity(model::LBMmodel; verbose = false)
     print("\r");
 
     createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/output.mp4`
+    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/output.mp4 $(name)`);
+    run(`mv anims/.output.mp4 $(name)`);
 end
 
 
