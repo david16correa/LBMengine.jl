@@ -18,4 +18,17 @@ module LBMengine
     export modelInit
     # main methods - dynamics
     export hydroVariablesUpdate, tick!, LBMpropagate!
+
+    # non-exported functions - aux methods
+    #= export dot, scalarFieldTimesVector, vectorFieldDotVector, vectorFieldDotVectorField =#
+    #= export pbcIndexShift, pbcMatrixShift, wallNodes, bounceBackPrep, save_jpg =#
+    #= export D1Q3, D2Q9, D3Q27 =#
+
+    # unexported functions - main methods
+    #= export massDensityGet, momentumDensityGet =#
+    #= export equilibriumDistribution, collisionOperator, guoForcingTerm =#
+    #= export findInitialConditions =#
+
+    # unexported functions - aux methods
+    #= export mean, norm =#
 end # module LBMengine
