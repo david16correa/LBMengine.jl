@@ -25,5 +25,11 @@ mutable struct LBMmodel
     distributions::Vector{LBMdistributions} # f_i(x, t) for all t
     velocities::Vector{LBMvelocity} # c_i for all i
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
-    schemes::Vector{Symbol} # schemes implemented thus far: :bounceBack (boundary conditions, stable), :guo (forcing, stable), :shan (forcing, unstable)
+    schemes::Vector{Symbol}
+    #= schemes implemented thus far:
+        :bounceBack (boundary conditions, stable),
+        :movingWalls (boundary conditions, stable),
+        :guo (forcing, stable),
+        :shan (forcing, unstable), 
+    =#
 end

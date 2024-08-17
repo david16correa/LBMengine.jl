@@ -103,11 +103,11 @@ function tick!(model::LBMmodel)
             streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
 
             if :movingWalls in model.schemes
-                ci = model.velocities[conjugateId].c .* model.spaceTime.Δx_Δt
-                wi = model.velocities[conjugateId].w
+                ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+                wi = model.velocities[id].w
                 uwdotci = pbcMatrixShift(model.boundaryConditionsParams.solidNodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
 
-                streamedDistribution[conjugateInvasionRegion] -= (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
+                streamedDistribution[conjugateInvasionRegion] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
             end
         end
 
@@ -226,14 +226,20 @@ function modelInit(;
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
     wallRegion = [false for _ in massDensity]
+    dims <= 2 && (wallRegion = sparse(wallRegion))
     if walledDimensions != :default
         wallRegion = wallNodes(massDensity; walledDimensions = walledDimensions); 
-        if solidNodes != :default && size(solidNodes) == size(wallRegion)
-            wallRegion = wallRegion .|| solidNodes
-        end
+
+        append!(schemes, [:bounceBack])
+    end
+    if solidNodes != :default && size(solidNodes) == size(wallRegion)
+        wallRegion = wallRegion .|| solidNodes
+
+        append!(schemes, [:bounceBack])
+    end
+    if :bounceBack in schemes
         massDensity[wallRegion] .= 0;
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
-        append!(schemes, [:bounceBack])
         boundaryConditionsParams = merge(boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
     end
 
@@ -298,7 +304,7 @@ function modelInit(;
         [initialDistributions], # f_i(x, t) for all t
         velocities, # c_i for all i
         boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
-        schemes # schemes implemented thus far: :bounceBack (boundary conditions, stable), :guo (forcing, stable), :shan (forcing, unstable)
+        unique(schemes)
     );
 
 #= ---------------------------- consistency check ---------------------------- =#
