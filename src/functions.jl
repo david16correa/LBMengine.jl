@@ -81,7 +81,7 @@ function guoForcingTerm(id::Int64, model::LBMmodel)
     return (1 - model.spaceTime.Δt/(2 * model.fluidParams.relaxationTime)) * wi * intermediateStep * model.spaceTime.Δt
 end
 
-"Time evolution (without pressure diff)"
+"Time evolution"
 function tick!(model::LBMmodel)
     # collision (or relaxation)
     collisionedDistributions = [model.distributions[end][id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 
@@ -123,8 +123,16 @@ function tick!(model::LBMmodel)
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
 end
 
-function LBMpropagate!(model::LBMmodel; simulationTime = 1, verbose = false)
-    time = range(model.spaceTime.Δt, stop = simulationTime, step = model.spaceTime.Δt);
+function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false)
+    if simulationTime != :default && ticks != :default
+        error("simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!")
+    elseif simulationTime == :default && ticks == :default
+        time = range(model.spaceTime.Δt, length = 100, step = model.spaceTime.Δt);
+    elseif ticks == :default
+        time = range(model.spaceTime.Δt, stop = simulationTime::Number, step = model.spaceTime.Δt);
+    else
+        time = range(model.spaceTime.Δt, length = ticks::Int64, step = model.spaceTime.Δt);
+    end
 
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
 
@@ -226,7 +234,6 @@ function modelInit(;
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
     wallRegion = [false for _ in massDensity]
-    dims <= 2 && (wallRegion = sparse(wallRegion))
     if walledDimensions != :default
         wallRegion = wallNodes(massDensity; walledDimensions = walledDimensions); 
 
@@ -237,6 +244,8 @@ function modelInit(;
 
         append!(schemes, [:bounceBack])
     end
+    dims <= 2 && (wallRegion = sparse(wallRegion))
+
     if :bounceBack in schemes
         massDensity[wallRegion] .= 0;
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
