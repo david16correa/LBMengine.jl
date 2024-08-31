@@ -92,10 +92,12 @@ bounce-back boundary conditions
 =============================================================================================
 ========================================================================================== =#
 
-function bounceBackPrep(wallRegion::Union{SparseMatrixCSC, BitArray}, velocities::Vector{LBMvelocity})
+function bounceBackPrep(wallRegion::Union{SparseMatrixCSC, BitArray}, velocities::Vector{LBMvelocity}; returnStreamingInvasionRegions = false)
     cs = [velocity.c for velocity in velocities];
 
     streamingInvasionRegions = [(pbcMatrixShift(wallRegion, -c) .|| wallRegion) .⊻ wallRegion for c in cs]
+
+    returnStreamingInvasionRegions && return streamingInvasionRegions
 
     oppositeVectorId = [findfirst(x -> x == -c, cs) for c in cs]
 

@@ -13,6 +13,18 @@ end
 # f_i(x) for all i in the model, independent of time!
 LBMdistributions = Vector{Array{Float64}}
 
+# rigid moving particles
+mutable struct LBMparticle
+    particleParams::NamedTuple # mass^-1, momentOfInertia^-1, solidRegionGenerator, symmetries
+    boundaryConditionsParams::NamedTuple
+    position::Vector{Float64}
+    velocity::Vector{Float64}
+    angularVelocity::Union{Float64, Vector{Float64}}
+    nodeVelocity::Array{Vector{Float64}}
+    momentumInput::Vector{Float64}
+    angularMomentumInput::Union{Float64, Vector{Float64}}
+end
+
 mutable struct LBMmodel
     spaceTime::NamedTuple # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
     time::Vector{Float64} # not in spaceTime bc NamedTuple are immutable!
@@ -25,11 +37,13 @@ mutable struct LBMmodel
     distributions::Vector{LBMdistributions} # f_i(x, t) for all t
     velocities::Vector{LBMvelocity} # c_i for all i
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
+    particles::Vector{LBMparticle}
     schemes::Vector{Symbol}
     #= schemes implemented thus far:
         :bounceBack (boundary conditions, stable),
         :movingWalls (boundary conditions, stable),
         :guo (forcing, stable),
-        :shan (forcing, unstable), 
+        :shan (forcing, unstable),
+        :ladd (rigid moving particles, in development)
     =#
 end
