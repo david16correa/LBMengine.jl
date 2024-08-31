@@ -5,7 +5,7 @@ module LBMengine
 
     include("structs.jl");
     include("aux.jl");
-    include("functions.jl");
+    include("fluids.jl");
     include("initMethods.jl");
 
     # structs
@@ -22,14 +22,14 @@ module LBMengine
 
     # non-exported functions - aux methods
     #= export dot, scalarFieldTimesVector, vectorFieldDotVector, vectorFieldDotVectorField =#
-    export pbcIndexShift, pbcMatrixShift, wallNodes, bounceBackPrep, save_jpg
+    #= export pbcIndexShift, pbcMatrixShift, wallNodes, bounceBackPrep, save_jpg =#
     #= export D1Q3, D2Q9, D3Q27 =#
 
-    # unexported functions - main methods
+    # non-exported functions - main methods
     #= export massDensityGet, momentumDensityGet =#
     #= export equilibriumDistribution, collisionOperator, guoForcingTerm =#
     #= export findInitialConditions =#
 
-    # unexported functions - aux methods
+    # non-exported functions - aux methods
     #= export mean, norm =#
 end # module LBMengine
