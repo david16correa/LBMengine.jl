@@ -5,53 +5,57 @@ init methods
 ========================================================================================== =#
 
 function addBead!(model::LBMmodel;
-    mass = 1.,
+    massDensity = 0.1,
     radio = 0.1,
-    position = :default, # origin (dimensionality dependent)
-    velocity = :default, # static (dimensionality dependent)
-    angularVelocity = :default, # static, (dimensionality dependent)
+    position = :default, # default: origin (actual value is dimensionality dependent)
+    velocity = :default, # default: static (actual value is dimensionality dependent)
+    angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
 )
-    beadGeometry(x::Vector{Float64}; radio = 0.25) = sum(x.^2) <= radio^2
+    # a local function for the general geometry of a centered bead (sphere) is defined
+    beadGeometry(x::Vector{Float64}; radio = 0.25) = sum(x.^2) < radio^2
 
+    # the mass is found using the mass density
+    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radio = radio)) * model.spaceTime.Δx^model.spaceTime.dims
+
+    # position and velocity are defined if necessary
+    position == :default && (position = [0. for _ in 1:model.spaceTime.dims])
+    velocity == :default && (velocity = [0. for _ in 1:model.spaceTime.dims])
+    # the dimensions are checked
+    (length(position) != length(velocity)) | (length(position) != model.spaceTime.dims) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
+
+    # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
     if model.spaceTime.dims == 2
         momentOfInertia = 0.5 * mass * radio^2 # moment of inertia for a disk
-        position == :default && (position = [0., 0])
-        solidRegion = [beadGeometry([i,j] - position; radio = radio) for i in model.spaceTime.x, j in model.spaceTime.x] |> sparse
-        velocity == :default && (velocity = [0., 0])
         angularVelocity == :default && (angularVelocity = 0.)
-        nodeVelocity = [[0.,0]]
-        momentumInput = [0., 0]
         angularMomentumInput = 0.
     elseif model.spaceTime.dims == 3
         momentOfInertia = 0.4 * mass * radio^2 # moment of inertia for a sphere
-        position == :default && (position = [0., 0, 0])
-        solidRegion = [beadGeometry([i,j,k] - position; radio = radio) for i in model.spaceTime.x, j in model.spaceTime.x, k in model.spaceTime.x]
-        velocity == :default && (velocity = [0., 0, 0])
         angularVelocity == :default && (angularVelocity = [0., 0, 0])
-        nodeVelocity = [[0.,0, 0]]
-        momentumInput = [0., 0, 0]
         angularMomentumInput = [0., 0, 0]
     else
-        error("dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
+        error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
 
-    streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
-
+    # a new bead is defined and added to the model
     newBead = LBMparticle(
         (;inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radio = radio), symmetries = [:spherical]),
-        (; solidRegion, streamingInvasionRegions),
+        (; solidRegion = [], streamingInvasionRegions = []),
         position,
         velocity,
         angularVelocity,
-        nodeVelocity,
-        momentumInput,
+        [],
+        [0. for _ in 1:model.spaceTime.dims],
         angularMomentumInput,
     )
     append!(model.particles, [newBead]);
+
+    moveParticles!(length(model.particles), model; initialSetup = true)
+
+    # the schemes of the model are managed
     append!(model.schemes, [:ladd])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
-        wallRegion = [false for _ in solidRegion] |> sparse
+        wallRegion = [false for _ in model.massDensity] |> sparse
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
         append!(model.schemes, [:bounceBack])
@@ -131,7 +135,8 @@ function modelInit(;
     (Δt == :default) ? (Δt = Δx) : nothing
     # size Δx/Δt is often used, its value is stored to avoid redundant calculations
     Δx_Δt = Δx/Δt |> Float64
-    spaceTime = (; x, Δx, Δt, Δx_Δt, dims); 
+    X = [[x[id] for id in Id |> Tuple]  for Id in eachindex(IndexCartesian(), massDensity)]
+    spaceTime = (; x, X, Δx, Δt, Δx_Δt, dims); 
     time = [0.];
 
     #= -------------------- fluid parameters are initialized -------------------- =#

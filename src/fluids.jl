@@ -106,19 +106,52 @@ function tick!(model::LBMmodel)
         streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c)
 
         if :bounceBack in model.schemes
-            # the wall regions are imposed to vanish
-            streamedDistribution[model.boundaryConditionsParams.wallRegion] .= 0;
-            # the invasion region of the fluid with opposite momentum is retrieved
+            # the wall region, the invasion region of the fluid, and the conjugate of the fluid with opposite momentum are retrieved
+            wallRegion = model.boundaryConditionsParams.wallRegion
             conjugateInvasionRegion, conjugateId = model.boundaryConditionsParams |> params -> (params.streamingInvasionRegions[params.oppositeVectorId[id]], params.oppositeVectorId[id])
+
+            # the wall regions are imposed to vanish
+            streamedDistribution[wallRegion] .= 0;
+
+            # the boudnary nodes of all rigid moving particles are considered in the streaming invasion exchange step
+            if :ladd in model.schemes
+                for particle in model.particles
+                    wallRegion = wallRegion .|| particle.boundaryConditionsParams.solidRegion
+                    conjugateInvasionRegion = conjugateInvasionRegion .|| particle.boundaryConditionsParams.streamingInvasionRegions[model.boundaryConditionsParams.oppositeVectorId[id]]
+                end
+            end
+
             # streaming invasion exchange step is performed
             streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[conjugateId][conjugateInvasionRegion]
 
+            # if any wall is moving, its momentum is transfered to the fluid
             if :movingWalls in model.schemes
                 ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                 wi = model.velocities[id].w
                 uwdotci = pbcMatrixShift(model.boundaryConditionsParams.solidNodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
 
                 streamedDistribution[conjugateInvasionRegion] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
+            end
+
+            # if any particle is moving, its momentum is exchanged with the fluid
+            if :ladd in model.schemes
+                ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+                wi = model.velocities[id].w
+                for particle in model.particles
+                    particleBoundaryNodes = particle.boundaryConditionsParams.streamingInvasionRegions[model.boundaryConditionsParams.oppositeVectorId[id]]
+
+                    # if the fluid did not bump into the particle, then the entire scheme can be skipped
+                    sum(particleBoundaryNodes) == 0 && break
+
+                    # the solids momentum is transfered to the fluid
+                    uwdotci = pbcMatrixShift(particle.nodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
+                    streamedDistribution[particleBoundaryNodes] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[particleBoundaryNodes] .* uwdotci[particleBoundaryNodes]
+
+                    # the fluids momentum is transfered to the solid
+                    sumTerm = collisionedDistributions[conjugateId][particleBoundaryNodes] + streamedDistribution[particleBoundaryNodes]
+                    particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci
+                    particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci)
+                end
             end
         end
 
@@ -132,6 +165,8 @@ function tick!(model::LBMmodel)
 
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
+    # and particles are moved, if there are any
+    :ladd in model.schemes && (moveParticles!(model));
 end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false)

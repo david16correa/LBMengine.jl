@@ -7,6 +7,7 @@ module LBMengine
     include("aux.jl");
     include("fluids.jl");
     include("initMethods.jl");
+    include("particles.jl")
 
     # structs
     export LBMvelocity, LBMparticle, LBMdistributions, LBMmodel
@@ -18,9 +19,11 @@ module LBMengine
     # main methods - initialization
     export modelInit, addBead!
     # main methods - dynamics
-    export hydroVariablesUpdate, tick!, LBMpropagate!
+    export hydroVariablesUpdate!, tick!, LBMpropagate!
+    export mechVariablesUpdate!
 
     # non-exported functions - aux methods
+    #= export cross, vectorCrossVectorField, vectorFieldCrossVector =#
     #= export dot, scalarFieldTimesVector, vectorFieldDotVector, vectorFieldDotVectorField =#
     #= export pbcIndexShift, pbcMatrixShift, wallNodes, bounceBackPrep, save_jpg =#
     #= export D1Q3, D2Q9, D3Q27 =#
