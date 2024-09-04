@@ -28,6 +28,24 @@ function vectorFieldDotVectorField(V::Array, W::Array)
     return size(V) |> sizeV -> [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 end
 
+function cross(v::Vector, w::Vector)
+    dim = 0
+    length(v) |> lenV -> (lenV == length(w)) ? (dim = lenV) : error("dimension mismatch!")
+    dim == 2 && (return v[1]*w[2] - v[2]*w[1])
+    dim == 3 && (return [v[2]*w[3] - v[3]*w[2], -v[1]*w[3] + v[3]*w[1], v[1]*w[2] - v[2]*w[1]])
+end
+
+#= I know this method is highly questionable, but it was born out of the need to compute the tangential
+velocity using the position vector and the angular velocity in two dimensions. Ω happens to be a scalar
+in two dimensions, but momentarily using three dimensions results in a simpler algorithm. =#
+cross(omega::Real, V::Vector) = cross([0; 0; omega], [V; 0])[1:2]
+
+function vectorCrossVectorField(V::Vector, W = Array)
+    return (cross(V, W) for W in W)
+end
+
+vectorFieldCrossVector(V::Array, W::Vector) = - vectorCrossVectorField(W, V)
+
 #= ==========================================================================================
 =============================================================================================
 shift auxilary functions 
@@ -289,7 +307,7 @@ function plotMassDensity(model::LBMmodel;
 end
 
 "The animation of the fluid velocity evolution is created."
-function anim8fluidVelocity(model::LBMmodel; verbose = false)
+function anim8fluidVelocity(model::LBMmodel; verbose = false, framerate = 30)
 
     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
 
@@ -323,7 +341,7 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
     print("\r");
 
     createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
+    createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
@@ -331,7 +349,7 @@ function anim8fluidVelocity(model::LBMmodel; verbose = false)
 end
 
 "The animation of the fluid velocity evolution is created."
-function anim8momentumDensity(model::LBMmodel; verbose = false)
+function anim8momentumDensity(model::LBMmodel; verbose = false, framerate = 30)
 
     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
 
@@ -364,7 +382,7 @@ function anim8momentumDensity(model::LBMmodel; verbose = false)
     print("\r");
 
     createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
+    createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
@@ -372,7 +390,7 @@ function anim8momentumDensity(model::LBMmodel; verbose = false)
 end
 
 "The animation of the mass density evolution is created."
-function anim8massDensity(model::LBMmodel; verbose = false)
+function anim8massDensity(model::LBMmodel; verbose = false, framerate = 30)
 
     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
 
@@ -401,7 +419,7 @@ function anim8massDensity(model::LBMmodel; verbose = false)
     print("\r");
 
     createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate 30 -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
+    createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
     run(createVid)
     run(`rm -r .tmp`)
     name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
