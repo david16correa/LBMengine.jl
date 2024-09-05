@@ -149,8 +149,8 @@ function tick!(model::LBMmodel)
 
                     # the fluids momentum is transfered to the solid
                     sumTerm = collisionedDistributions[conjugateId][particleBoundaryNodes] + streamedDistribution[particleBoundaryNodes]
-                    particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci
-                    particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci)
+                    particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
+                    particle.particleParams.coupleTorque && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci))
                 end
             end
         end

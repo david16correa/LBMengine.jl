@@ -12,9 +12,9 @@ scalar and vector fild arithmetic auxilary functions -
 =============================================================================================
 ========================================================================================== =#
 
-dot(v::Vector, w::Vector) = v .* w |> sum
+#= dot(v::Vector, w::Vector) = v .* w |> sum =#
 
-norm(T) = √(sum(el for el ∈ T.*T))
+norm(T) = sum(el for el ∈ T.*T) |> sqrt
 
 function scalarFieldTimesVector(a::Array, V::Vector)
     return [a * V for a in a]
@@ -28,12 +28,12 @@ function vectorFieldDotVectorField(V::Array, W::Array)
     return size(V) |> sizeV -> [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 end
 
-function cross(v::Vector, w::Vector)
-    dim = 0
-    length(v) |> lenV -> (lenV == length(w)) ? (dim = lenV) : error("dimension mismatch!")
-    dim == 2 && (return v[1]*w[2] - v[2]*w[1])
-    dim == 3 && (return [v[2]*w[3] - v[3]*w[2], -v[1]*w[3] + v[3]*w[1], v[1]*w[2] - v[2]*w[1]])
-end
+#= function cross(v::Vector, w::Vector) =#
+#=     dim = 0 =#
+#=     length(v) |> lenV -> (lenV == length(w)) ? (dim = lenV) : error("dimension mismatch!") =#
+#=     dim == 2 && (return v[1]*w[2] - v[2]*w[1]) =#
+#=     dim == 3 && (return [v[2]*w[3] - v[3]*w[2], -v[1]*w[3] + v[3]*w[1], v[1]*w[2] - v[2]*w[1]]) =#
+#= end =#
 
 #= I know this method is highly questionable, but it was born out of the need to compute the tangential
 velocity using the position vector and the angular velocity in two dimensions. Ω happens to be a scalar
@@ -190,7 +190,8 @@ function plotFluidVelocity(model::LBMmodel;
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
     vec = [fluidVelocity[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
     vec = 0.07 .* vec ./ maximumFluidSpeed;
-    arrows!(fig[1,1], pos, vec,
+    nonZeroVec = (vec .|> norm) .> 0.007
+    arrows!(fig[1,1], pos[nonZeroVec], vec[nonZeroVec],
         arrowsize = 10,
         align = :center
     );
@@ -241,7 +242,8 @@ function plotMomentumDensity(model::LBMmodel;
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
     vec = [momentumDensity[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
     vec = 0.07 .* vec ./ maximumMomentumDensity;
-    arrows!(fig[1,1], pos, vec, 
+    nonZeroVec = (vec .|> norm) .> 0.007
+    arrows!(fig[1,1], pos[nonZeroVec], vec[nonZeroVec],
         arrowsize = 10, 
         align = :center
     );

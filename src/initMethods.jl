@@ -10,6 +10,8 @@ function addBead!(model::LBMmodel;
     position = :default, # default: origin (actual value is dimensionality dependent)
     velocity = :default, # default: static (actual value is dimensionality dependent)
     angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
+    coupleTorque = false,
+    coupleForces = true,
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
     beadGeometry(x::Vector{Float64}; radio = 0.25) = sum(x.^2) < radio^2
@@ -38,7 +40,7 @@ function addBead!(model::LBMmodel;
 
     # a new bead is defined and added to the model
     newBead = LBMparticle(
-        (;inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radio = radio), symmetries = [:spherical]),
+        (;inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radio = radio), symmetries = [:spherical], coupleTorque, coupleForces),
         (; solidRegion = [], streamingInvasionRegions = []),
         position,
         velocity,

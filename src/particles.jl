@@ -35,6 +35,10 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     model.spaceTime.dims < 3 && (solidRegion = sparse(solidRegion))
     # the new streaming invasion regions are found
     streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
+    interiorStreamingInvasionRegions = bounceBackPrep(solidRegion .|> b -> !b, model.velocities; returnStreamingInvasionRegions = true)
+    for id in eachindex(model.boundaryConditionsParams.oppositeVectorId)
+        streamingInvasionRegions[id] = streamingInvasionRegions[id] .|| interiorStreamingInvasionRegions[id]
+    end
 
     # the solid velocity (momentum density / mass density) is found
     if nodeVelocityMustChange
