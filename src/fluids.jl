@@ -147,10 +147,12 @@ function tick!(model::LBMmodel)
                     uwdotci = pbcMatrixShift(particle.nodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
                     streamedDistribution[particleBoundaryNodes] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[particleBoundaryNodes] .* uwdotci[particleBoundaryNodes]
 
-                    # the fluids momentum is transfered to the solid
-                    sumTerm = collisionedDistributions[conjugateId][particleBoundaryNodes] + streamedDistribution[particleBoundaryNodes]
-                    particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
-                    particle.particleParams.coupleTorque && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci))
+                    # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
+                    if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
+                        sumTerm = collisionedDistributions[conjugateId][particleBoundaryNodes] + streamedDistribution[particleBoundaryNodes]
+                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci))
+                    end
                 end
             end
         end

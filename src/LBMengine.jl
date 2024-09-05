@@ -2,6 +2,7 @@ module LBMengine
     using SparseArrays
     using CairoMakie
     using Dates
+    import LinearAlgebra.dot, LinearAlgebra.cross, LinearAlgebra.norm
 
     include("structs.jl");
     include("aux.jl");
@@ -32,6 +33,7 @@ module LBMengine
     #= export massDensityGet, momentumDensityGet =#
     #= export equilibriumDistribution, collisionOperator, guoForcingTerm =#
     #= export findInitialConditions =#
+    #= export moveParticles! =#
 
     # non-exported functions - aux methods
     #= export mean, norm =#

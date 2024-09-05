@@ -14,7 +14,7 @@ scalar and vector fild arithmetic auxilary functions -
 
 #= dot(v::Vector, w::Vector) = v .* w |> sum =#
 
-norm(T) = sum(el for el ∈ T.*T) |> sqrt
+#= norm(T) = sum(el for el ∈ T.*T) |> sqrt =#
 
 function scalarFieldTimesVector(a::Array, V::Vector)
     return [a * V for a in a]
