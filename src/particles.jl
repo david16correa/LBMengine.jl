@@ -20,14 +20,26 @@ end
 function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     # the particle is named locally for readibility
     particle = model.particles[id]
+    # node veloicity must change if: there was linear or angular momentum input, or if the particle is being setup
     nodeVelocityMustChange = (particle.momentumInput |> v -> v != zero(v)) || (particle.angularMomentumInput |> v -> v != zero(v)) || initialSetup
+    # normally, particleMoved would be initialized as false; it'd be later turned into true if the particle moved (go figure).
+    # This variable helps us skip unnecessary analyses. However, these are necessary during initial setup. Hence this initialization.
+    particleMoved = initialSetup
 
     # the velocity and angular velocity are updated, and the particle is moved (this is not necessary in the initial setup)
     if !initialSetup
         particle.velocity += particle.particleParams.inverseMass * particle.momentumInput
         particle.angularVelocity += particle.particleParams.inverseMomentOfInertia * particle.angularMomentumInput
-        eulerStep!(id, model)
+        # the particle will be moved only if the velocity is nonzero! (there are no methods for rotating particles)
+        (particle.velocity |> v -> v != zero(v)) && (eulerStep!(id, model); particleMoved = true)
     end
+
+    # the inputs are reset
+    particle.momentumInput = particle.momentumInput |> zero
+    particle.angularMomentumInput = particle.angularMomentumInput |> zero
+
+    # if the particle didn't move, we're done
+    !particleMoved && return
 
     # the particle discretisation on the lattice is updated
     solidRegion = [particle.particleParams.solidRegionGenerator(x - particle.position) for x in model.spaceTime.X]
@@ -49,8 +61,6 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
     # everything is stored in the original particle
     particle.boundaryConditionsParams = (; solidRegion, streamingInvasionRegions);
-    particle.momentumInput = particle.momentumInput |> zero
-    particle.angularMomentumInput = particle.angularMomentumInput |> zero
 end
 
 function moveParticles!(model::LBMmodel)

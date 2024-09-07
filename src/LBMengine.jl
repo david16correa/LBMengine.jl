@@ -2,7 +2,7 @@ module LBMengine
     using SparseArrays
     using CairoMakie
     using Dates
-    import LinearAlgebra.dot, LinearAlgebra.cross, LinearAlgebra.norm
+    import LinearAlgebra.dot, LinearAlgebra.norm
 
     include("structs.jl");
     include("aux.jl");
@@ -20,21 +20,31 @@ module LBMengine
     # main methods - initialization
     export modelInit, addBead!
     # main methods - dynamics
-    export hydroVariablesUpdate!, tick!, LBMpropagate!
-    export mechVariablesUpdate!
+    export hydroVariablesUpdate!, LBMpropagate!
 
-    # non-exported functions - aux methods
-    #= export cross, vectorCrossVectorField, vectorFieldCrossVector =#
-    #= export dot, scalarFieldTimesVector, vectorFieldDotVector, vectorFieldDotVectorField =#
-    #= export pbcIndexShift, pbcMatrixShift, wallNodes, bounceBackPrep, save_jpg =#
-    #= export D1Q3, D2Q9, D3Q27 =#
-
-    # non-exported functions - main methods
-    #= export massDensityGet, momentumDensityGet =#
-    #= export equilibriumDistribution, collisionOperator, guoForcingTerm =#
+    # non-exported functions
+    #= export scalarFieldTimesVector =#
+    #= export vectorFieldDotVector =#
+    #= export vectorFieldDotVectorField =#
+    #= export cross =#
+    #= export vectorCrossVectorField =#
+    #= export vectorFieldCrossVector =#
+    #= export vectorFieldCrossVectorField =#
+    #= export pbcIndexShift =#
+    #= export pbcMatrixShift =#
+    #= export wallNodes =#
+    #= export bounceBackPrep =#
+    #= export createFigDirs =#
+    #= export createAnimDirs =#
+    #= export save_jpg =#
+    #= export massDensityGet =#
+    #= export momentumDensityGet =#
+    #= export equilibriumDistribution =#
+    #= export collisionOperator =#
+    #= export guoForcingTerm =#
+    #= export tick! =#
+    #= export LBMpropagate! =#
     #= export findInitialConditions =#
+    #= export eulerStep! =#
     #= export moveParticles! =#
-
-    # non-exported functions - aux methods
-    #= export mean, norm =#
 end # module LBMengine

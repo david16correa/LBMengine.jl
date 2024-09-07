@@ -151,7 +151,9 @@ function tick!(model::LBMmodel)
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
                         sumTerm = collisionedDistributions[conjugateId][particleBoundaryNodes] + streamedDistribution[particleBoundaryNodes]
                         particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci))
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                            sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci
+                        ))
                     end
                 end
             end

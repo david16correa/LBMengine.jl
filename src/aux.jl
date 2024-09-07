@@ -12,10 +12,6 @@ scalar and vector fild arithmetic auxilary functions -
 =============================================================================================
 ========================================================================================== =#
 
-#= dot(v::Vector, w::Vector) = v .* w |> sum =#
-
-#= norm(T) = sum(el for el ∈ T.*T) |> sqrt =#
-
 function scalarFieldTimesVector(a::Array, V::Vector)
     return [a * V for a in a]
 end
@@ -25,15 +21,15 @@ function vectorFieldDotVector(F::Array, v::Vector)
 end
 
 function vectorFieldDotVectorField(V::Array, W::Array)
-    return size(V) |> sizeV -> [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
+    return [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 end
 
-#= function cross(v::Vector, w::Vector) =#
-#=     dim = 0 =#
-#=     length(v) |> lenV -> (lenV == length(w)) ? (dim = lenV) : error("dimension mismatch!") =#
-#=     dim == 2 && (return v[1]*w[2] - v[2]*w[1]) =#
-#=     dim == 3 && (return [v[2]*w[3] - v[3]*w[2], -v[1]*w[3] + v[3]*w[1], v[1]*w[2] - v[2]*w[1]]) =#
-#= end =#
+function cross(v::Vector, w::Vector)
+    dim = 0
+    length(v) |> lenV -> (lenV == length(w)) ? (dim = lenV) : error("dimension mismatch!")
+    dim == 2 && (return v[1]*w[2] - v[2]*w[1])
+    dim == 3 && (return [v[2]*w[3] - v[3]*w[2], -v[1]*w[3] + v[3]*w[1], v[1]*w[2] - v[2]*w[1]])
+end
 
 #= I know this method is highly questionable, but it was born out of the need to compute the tangential
 velocity using the position vector and the angular velocity in two dimensions. Ω happens to be a scalar
@@ -41,7 +37,11 @@ in two dimensions, but momentarily using three dimensions results in a simpler a
 cross(omega::Real, V::Vector) = cross([0; 0; omega], [V; 0])[1:2]
 
 function vectorCrossVectorField(V::Vector, W = Array)
-    return (cross(V, W) for W in W)
+    return [cross(V, W) for W in W]
+end
+
+function vectorFieldCrossVectorField(V::Array, W = Array)
+    return [cross(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 end
 
 vectorFieldCrossVector(V::Array, W::Vector) = - vectorCrossVectorField(W, V)
