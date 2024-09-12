@@ -4,21 +4,13 @@ general methods
 =============================================================================================
 ========================================================================================== =#
 
-function massDensityGet(model::LBMmodel; time = :default)
-    if time == :default
-        return sum(distribution for distribution in model.distributions[end])
-    else
-        return sum(distribution for distribution in model.distributions[time])
-    end
+function massDensityGet(model::LBMmodel)
+    return sum(distribution for distribution in model.distributions)
 end
  
-function momentumDensityGet(model::LBMmodel; time = :default, useEquilibriumScheme = false)
+function momentumDensityGet(model::LBMmodel; useEquilibriumScheme = false)
     # en estep punto se dará por hecho que la fuerza es constante!!
-    if time == :default
-        bareMomentum = sum(scalarFieldTimesVector(model.distributions[end][id], model.velocities[id].c) for id in eachindex(model.velocities))
-    else
-        bareMomentum = sum(scalarFieldTimesVector(model.distributions[time][id], model.velocities[id].c) for id in eachindex(model.velocities))
-    end
+    bareMomentum = sum(scalarFieldTimesVector(model.distributions[id], model.velocities[id].c) for id in eachindex(model.velocities))
 
     if useEquilibriumScheme
         if :shan in model.schemes
@@ -36,9 +28,9 @@ function momentumDensityGet(model::LBMmodel; time = :default, useEquilibriumSche
     return bareMomentum
 end
 
-function hydroVariablesUpdate!(model::LBMmodel; time = :default, useEquilibriumScheme = false)
-    model.massDensity = massDensityGet(model; time = time)
-    model.momentumDensity = momentumDensityGet(model; time = time, useEquilibriumScheme = useEquilibriumScheme)
+function hydroVariablesUpdate!(model::LBMmodel; useEquilibriumScheme = false)
+    model.massDensity = massDensityGet(model)
+    model.momentumDensity = momentumDensityGet(model; useEquilibriumScheme = useEquilibriumScheme)
     model.fluidVelocity = [[0.; 0] for _ in model.massDensity]
     fluidIndices = (model.massDensity .≈ 0) .|> b -> !b;
     model.fluidVelocity[fluidIndices] = model.momentumDensity[fluidIndices] ./ model.massDensity[fluidIndices]
@@ -66,7 +58,7 @@ end
 "calculates Ω at the last recorded time!"
 function collisionOperator(id::Int64, model::LBMmodel)
     # the Bhatnagar-Gross-Krook collision opeartor is used
-    BGK = -model.distributions[end][id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.relaxationTime * f
+    BGK = -model.distributions[id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.relaxationTime * f
 
     # forcing terms are added
     if :guo in model.schemes
@@ -95,7 +87,7 @@ time evolution
 
 function tick!(model::LBMmodel)
     # collision (or relaxation)
-    collisionedDistributions = [model.distributions[end][id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 
+    collisionedDistributions = [model.distributions[id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 
 
     # propagated distributions will be saved in a new vector
     propagatedDistributions = [] |> LBMdistributions ;
@@ -164,8 +156,8 @@ function tick!(model::LBMmodel)
     end
 
     # the new distributions and time are appended
-    append!(model.distributions, [propagatedDistributions]);
-    append!(model.time, [model.time[end]+model.spaceTime.Δt]);
+    model.distributions = propagatedDistributions
+    model.time += model.spaceTime.Δt
 
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
@@ -173,7 +165,7 @@ function tick!(model::LBMmodel)
     :ladd in model.schemes && (moveParticles!(model));
 end
 
-function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false)
+function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = 10)
     if simulationTime != :default && ticks != :default
         error("simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!")
     elseif simulationTime == :default && ticks == :default
@@ -186,9 +178,16 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
 
+    if :saveData in model.schemes
+        writingTimes = range(1, stop = length(time), step = ticksBetweenSaves) |> collect
+        writingTimes[end] != length(time) && @warn "Simulation will stop at t = $(time[writingTimes[end]]), as this is the last snapshot that will be recorded in the data."
+        time = time[1:writingTimes[end]]
+    end
+
     for t in time |> eachindex
         tick!(model);
-        verbose && t in outputTimes && print("\r t = $(model.time[end])")
+        verbose && t in outputTimes && print("\r t = $(model.time)")
+        :saveData in model.schemes && t in writingTimes && writeTrajectories(model; tick = t)
     end
     print("\r");
 

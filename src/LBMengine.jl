@@ -1,7 +1,7 @@
 module LBMengine
     using SparseArrays
     using CairoMakie
-    using Dates
+    using DataFrames, CSV, Dates
     import LinearAlgebra.dot, LinearAlgebra.norm
 
     include("structs.jl");
@@ -47,4 +47,5 @@ module LBMengine
     #= export findInitialConditions =#
     #= export eulerStep! =#
     #= export moveParticles! =#
+    #= export writeTrajectories =#
 end # module LBMengine

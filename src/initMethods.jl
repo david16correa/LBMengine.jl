@@ -23,7 +23,7 @@ function addBead!(model::LBMmodel;
     position == :default && (position = [0. for _ in 1:model.spaceTime.dims])
     velocity == :default && (velocity = [0. for _ in 1:model.spaceTime.dims])
     # the dimensions are checked
-    (length(position) != length(velocity)) | (length(position) != model.spaceTime.dims) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
+    ((length(position) != length(velocity)) || (length(position) != model.spaceTime.dims)) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
 
     # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
     if model.spaceTime.dims == 2
@@ -94,7 +94,8 @@ function modelInit(;
     solidNodeVelocity = :default, # default: static solids - u = [0,0]
     isFluidCompressible = false,
     forceDensity = :default, # default: F(0) = 0
-    forcingScheme = :default # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
+    forcingScheme = :default, # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
+    saveData = false, # by default, no data is saved
 )
     # the list of schemes is initialized
     schemes = [] |> Vector{Symbol}
@@ -139,7 +140,7 @@ function modelInit(;
     Δx_Δt = Δx/Δt |> Float64
     X = [[x[id] for id in Id |> Tuple]  for Id in eachindex(IndexCartesian(), massDensity)]
     spaceTime = (; x, X, Δx, Δt, Δx_Δt, dims); 
-    time = [0.];
+    time = 0.;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
@@ -209,10 +210,15 @@ function modelInit(;
             fluidParams,
             massDensity,
             fluidVelocity,
-            Δx_Δt; 
+            Δx_Δt;
             kwInitialConditions = kwInitialConditions
         ) 
     for id in eachindex(velocities)]
+
+    #= --------------------------- initial distributions are found --------------------------- =#
+
+    saveData && append!(schemes, [:saveData])
+
 
     #= ------------------------- the model is initialized ------------------------ =#
     model = LBMmodel(
@@ -224,7 +230,7 @@ function modelInit(;
         massDensity.*fluidVelocity, # momentum density
         fluidVelocity, # fluid velocity
         forceDensity,
-        [initialDistributions], # f_i(x, t) for all t
+        initialDistributions, # f_i(x, t) for all t
         velocities, # c_i for all i
         boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
         []|>Vector{LBMparticle},
@@ -242,6 +248,8 @@ function modelInit(;
     if (error_massDensity > acceptableError) || (error_fluidVelocity > acceptableError)
         @warn "the initial conditions for ρ and u could not be met. New ones were defined."
     end
+
+    :saveData in model.schemes && writeTrajectories(model)
 
     # the model is returned
     return model

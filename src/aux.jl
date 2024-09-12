@@ -25,9 +25,8 @@ function vectorFieldDotVectorField(V::Array, W::Array)
 end
 
 function cross(v::Vector, w::Vector)
-    dim = 0
-    length(v) |> lenV -> (lenV == length(w)) ? (dim = lenV) : error("dimension mismatch!")
-    dim == 2 && (return v[1]*w[2] - v[2]*w[1])
+    dim = length(v) # dimension consistency is not checked bc I trust I won't mess things up
+    dim == 2 && (return v[1]*w[2] - v[2]*w[1]) # in two dimensions, vectors are assumed to have zero z component, and only the z component is returned
     dim == 3 && (return [v[2]*w[3] - v[3]*w[2], -v[1]*w[3] + v[3]*w[1], v[1]*w[2] - v[2]*w[1]])
 end
 
@@ -124,6 +123,27 @@ end
 
 #= ==========================================================================================
 =============================================================================================
+saving data
+=============================================================================================
+========================================================================================== =#
+
+function writeTrajectories(model::LBMmodel; tick = 0)
+        tickDf = [tick for _ in 1:length(model.massDensity)] |> M -> reshape(M, (length(M), 1)) |> V -> DataFrame(V, [:tick]);
+        timeDf = [model.time for _ in 1:length(model.massDensity)] |> M -> reshape(M, (length(M), 1)) |> V -> DataFrame(V, [:time]);
+        idsDf = model.spaceTime.X |> M -> eachindex(IndexCartesian(), M) |> M -> reshape(M, (length(M), 1)) |> V -> [[v[1] for v in V] [v[2] for v in V]] |> V -> DataFrame(V, [:id_x, :id_y]);
+        coordDf = model.spaceTime.X |> M -> reshape(M, (length(M), 1)) |> V -> [[v[1] for v in V] [v[2] for v in V]] |> V -> DataFrame(V, [:coordinate_x, :coordinate_y]);
+        massDf = model.massDensity |> M -> reshape(M, (length(M), 1)) |> V -> DataFrame(V, [:massDensity]);
+        fluidVelDf = model.fluidVelocity |> M -> reshape(M, (length(M), 1)) |> V -> [[v[1] for v in V] [v[2] for v in V]] |> V -> DataFrame(V, [:fluidVelocity_x, :fluidVelocity_y]);
+        distributionsDf = model.distributions |> distributions -> [reshape(d, (length(d), 1)) for d in distributions] |> M -> DataFrame(hcat(M...), ["f$(i)" for i in 1:9]);
+        if tick == 0
+            CSV.write(".fluidTrj.csv", [tickDf timeDf idsDf coordDf massDf fluidVelDf distributionsDf])
+        else
+            CSV.write(".fluidTrj.csv", [tickDf timeDf idsDf coordDf massDf fluidVelDf distributionsDf], append = true)
+        end
+end
+
+#= ==========================================================================================
+=============================================================================================
 graphics stuff
 =============================================================================================
 ========================================================================================== =#
@@ -157,15 +177,14 @@ end
 "the fluid velocity plot is generated and saved."
 function plotFluidVelocity(model::LBMmodel;
     saveFig = true, 
-    t = :default,
     fluidVelocity = :default, 
     maximumFluidSpeed = :default
 )
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
-    (t == :default) ? (t = model.time[end]) : nothing
+    t = model.time
 
-    (fluidVelocity == :default) ? (fluidVelocity = model.fluidVelocity) : nothing
+    fluidVelocity = model.fluidVelocity
 
     if maximumFluidSpeed == :default
         maximumFluidSpeed = (model.fluidVelocity .|> norm) |> maximum
@@ -209,15 +228,14 @@ end
 "the momentum density plot is generated and saved."
 function plotMomentumDensity(model::LBMmodel;
     saveFig = true, 
-    t = :default,
     momentumDensity = :default, 
     maximumMomentumDensity = :default
 )
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
-    (t == :default) ? (t = model.time[end]) : nothing
+    t = model.time
 
-    (momentumDensity == :default) ? (momentumDensity = model.momentumDensity) : nothing
+    momentumDensity = model.momentumDensity
 
     if maximumMomentumDensity == :default
         maximumMomentumDensity = (model.momentumDensity .|> norm) |> maximum
@@ -262,16 +280,15 @@ end
 "the mass density plot is generated and saved."
 function plotMassDensity(model::LBMmodel;
     saveFig = true,
-    t = :default,
     massDensity = :default, 
     maximumMassDensity = :default,
     minimumMassDensity = :default
 )
     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
 
-    (t == :default) ? (t = model.time[end]) : nothing
+    t = model.time
 
-    (massDensity == :default) ? (massDensity = model.massDensity) : nothing
+    massDensity = model.massDensity
 
     if maximumMassDensity == :default
         maximumMassDensity = massDensity |> maximum
@@ -308,125 +325,125 @@ function plotMassDensity(model::LBMmodel;
     end
 end
 
-"The animation of the fluid velocity evolution is created."
-function anim8fluidVelocity(model::LBMmodel; verbose = false, framerate = 30)
+#= "The animation of the fluid velocity evolution is created." =#
+#= function anim8fluidVelocity(model::LBMmodel; verbose = false, framerate = 30) =#
+#==#
+#=     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round) =#
+#==#
+#=     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V)); =#
+#==#
+#=     maximumFluidSpeed = 1.; =#
+#==#
+#=     isdir(".tmp") && run(`rm -r .tmp`) =#
+#=     mkdir(".tmp") =#
+#==#
+#=     fluidVelocities = [] |> Vector{Matrix{Vector{Float64}}}; =#
+#=     for t in eachindex(model.time) =#
+#=         hydroVariablesUpdate!(model; time = t); =#
+#=         append!(fluidVelocities, [model.fluidVelocity]); =#
+#=     end =#
+#==#
+#=     maximumFluidSpeed = (fluidVelocities .|> M -> norm.(M)) .|> maximum |> maximum =#
+#==#
+#==#
+#=     for t in eachindex(model.time) =#
+#=         animationFig, animationAx = plotFluidVelocity(model;  =#
+#=             saveFig = false,  =#
+#=             t = model.time[t], =#
+#=             fluidVelocity = fluidVelocities[t], =#
+#=             maximumFluidSpeed = maximumFluidSpeed =#
+#=         ) =#
+#=         save(".tmp/$(t).png", animationFig) =#
+#==#
+#=         verbose && t in outputTimes && print("\r t = $(model.time[t])") =#
+#=     end =#
+#=     print("\r"); =#
+#==#
+#=     createAnimDirs() =#
+#=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
+#=     run(createVid) =#
+#=     run(`rm -r .tmp`) =#
+#=     name = "anims/$(today())/LBM simulation $(Time(now())).mp4" =#
+#=     run(`mv anims/.output.mp4 $(name)`); =#
+#= end =#
 
-    verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
+#= "The animation of the fluid velocity evolution is created." =#
+#= function anim8momentumDensity(model::LBMmodel; verbose = false, framerate = 30) =#
+#==#
+#=     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round) =#
+#==#
+#=     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V)); =#
+#==#
+#=     maximumMomentumDensity = 1.; =#
+#==#
+#=     isdir(".tmp") && run(`rm -r .tmp`) =#
+#=     mkdir(".tmp") =#
+#==#
+#=     momentumDensities = [] |> Vector{Matrix{Vector{Float64}}}; =#
+#=     for t in eachindex(model.time) =#
+#=         hydroVariablesUpdate!(model; time = t); =#
+#=         append!(momentumDensities, [model.momentumDensity]); =#
+#=     end =#
+#==#
+#=     maximumMomentumDensity = (momentumDensities .|> M -> norm.(M)) .|> maximum |> maximum =#
+#==#
+#=     for t in eachindex(model.time) =#
+#=         animationFig, animationAx = plotMomentumDensity(model;  =#
+#=             saveFig = false, =#
+#=             t = model.time[t], =#
+#=             momentumDensity = momentumDensities[t], =#
+#=             maximumMomentumDensity = maximumMomentumDensity =#
+#=         ) =#
+#=         save(".tmp/$(t).png", animationFig) =#
+#==#
+#=         verbose && t in outputTimes && print("\r t = $(model.time[t])") =#
+#=     end =#
+#=     print("\r"); =#
+#==#
+#=     createAnimDirs() =#
+#=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
+#=     run(createVid) =#
+#=     run(`rm -r .tmp`) =#
+#=     name = "anims/$(today())/LBM simulation $(Time(now())).mp4" =#
+#=     run(`mv anims/.output.mp4 $(name)`); =#
+#= end =#
 
-    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
-
-    maximumFluidSpeed = 1.;
-
-    isdir(".tmp") && run(`rm -r .tmp`)
-    mkdir(".tmp")
-
-    fluidVelocities = [] |> Vector{Matrix{Vector{Float64}}};
-    for t in eachindex(model.time)
-        hydroVariablesUpdate!(model; time = t);
-        append!(fluidVelocities, [model.fluidVelocity]);
-    end
-
-    maximumFluidSpeed = (fluidVelocities .|> M -> norm.(M)) .|> maximum |> maximum
-
-
-    for t in eachindex(model.time)
-        animationFig, animationAx = plotFluidVelocity(model; 
-            saveFig = false, 
-            t = model.time[t],
-            fluidVelocity = fluidVelocities[t],
-            maximumFluidSpeed = maximumFluidSpeed
-        )
-        save(".tmp/$(t).png", animationFig)
-
-        verbose && t in outputTimes && print("\r t = $(model.time[t])")
-    end
-    print("\r");
-
-    createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
-    run(createVid)
-    run(`rm -r .tmp`)
-    name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/.output.mp4 $(name)`);
-end
-
-"The animation of the fluid velocity evolution is created."
-function anim8momentumDensity(model::LBMmodel; verbose = false, framerate = 30)
-
-    verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
-
-    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
-
-    maximumMomentumDensity = 1.;
-
-    isdir(".tmp") && run(`rm -r .tmp`)
-    mkdir(".tmp")
-
-    momentumDensities = [] |> Vector{Matrix{Vector{Float64}}};
-    for t in eachindex(model.time)
-        hydroVariablesUpdate!(model; time = t);
-        append!(momentumDensities, [model.momentumDensity]);
-    end
-
-    maximumMomentumDensity = (momentumDensities .|> M -> norm.(M)) .|> maximum |> maximum
-
-    for t in eachindex(model.time)
-        animationFig, animationAx = plotMomentumDensity(model; 
-            saveFig = false,
-            t = model.time[t],
-            momentumDensity = momentumDensities[t],
-            maximumMomentumDensity = maximumMomentumDensity
-        )
-        save(".tmp/$(t).png", animationFig)
-
-        verbose && t in outputTimes && print("\r t = $(model.time[t])")
-    end
-    print("\r");
-
-    createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
-    run(createVid)
-    run(`rm -r .tmp`)
-    name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/.output.mp4 $(name)`);
-end
-
-"The animation of the mass density evolution is created."
-function anim8massDensity(model::LBMmodel; verbose = false, framerate = 30)
-
-    verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round)
-
-    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
-
-    massDensities = [massDensityGet(model; time = t) for t in eachindex(model.time)]
-
-    maximumMassDensity = (massDensities .|> maximum) |> maximum
-    minimumMassDensity = [massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for massDensity in massDensities] |> minimum |> x -> maximum([0, x])
-
-    isdir(".tmp") && run(`rm -r .tmp`)
-    mkdir(".tmp")
-
-    for t in eachindex(model.time)
-        animationFig, animationAx = plotMassDensity(model; 
-            saveFig = false,
-            t = model.time[t],
-            massDensity = massDensities[t],
-            maximumMassDensity = maximumMassDensity,
-            minimumMassDensity = minimumMassDensity
-        )
-        save(".tmp/$(t).png", animationFig)
-
-        verbose && t in outputTimes && print("\r t = $(model.time[t])")
-    end
-    print("\r");
-
-    createAnimDirs()
-    createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4`
-    run(createVid)
-    run(`rm -r .tmp`)
-    name = "anims/$(today())/LBM simulation $(Time(now())).mp4"
-    run(`mv anims/.output.mp4 $(name)`);
-end
+#= "The animation of the mass density evolution is created." =#
+#= function anim8massDensity(model::LBMmodel; verbose = false, framerate = 30) =#
+#==#
+#=     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round) =#
+#==#
+#=     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V)); =#
+#==#
+#=     massDensities = [massDensityGet(model; time = t) for t in eachindex(model.time)] =#
+#==#
+#=     maximumMassDensity = (massDensities .|> maximum) |> maximum =#
+#=     minimumMassDensity = [massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for massDensity in massDensities] |> minimum |> x -> maximum([0, x]) =#
+#==#
+#=     isdir(".tmp") && run(`rm -r .tmp`) =#
+#=     mkdir(".tmp") =#
+#==#
+#=     for t in eachindex(model.time) =#
+#=         animationFig, animationAx = plotMassDensity(model;  =#
+#=             saveFig = false, =#
+#=             t = model.time[t], =#
+#=             massDensity = massDensities[t], =#
+#=             maximumMassDensity = maximumMassDensity, =#
+#=             minimumMassDensity = minimumMassDensity =#
+#=         ) =#
+#=         save(".tmp/$(t).png", animationFig) =#
+#==#
+#=         verbose && t in outputTimes && print("\r t = $(model.time[t])") =#
+#=     end =#
+#=     print("\r"); =#
+#==#
+#=     createAnimDirs() =#
+#=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
+#=     run(createVid) =#
+#=     run(`rm -r .tmp`) =#
+#=     name = "anims/$(today())/LBM simulation $(Time(now())).mp4" =#
+#=     run(`mv anims/.output.mp4 $(name)`); =#
+#= end =#
 
 
 #= ==========================================================================================
