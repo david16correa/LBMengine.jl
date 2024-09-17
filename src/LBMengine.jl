@@ -36,7 +36,7 @@ module LBMengine
     #= export bounceBackPrep =#
     #= export createFigDirs =#
     #= export createAnimDirs =#
-    #= export save_jpg =#
+    export save_jpg
     #= export massDensityGet =#
     #= export momentumDensityGet =#
     #= export equilibriumDistribution =#

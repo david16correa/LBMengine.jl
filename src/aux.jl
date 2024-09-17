@@ -128,32 +128,77 @@ saving data
 ========================================================================================== =#
 
 function writeTrajectories(model::LBMmodel; tick = 0)
-        tickDf = [tick for _ in 1:length(model.massDensity)] |> M -> reshape(M, (length(M), 1)) |> V -> DataFrame(V, [:tick]);
-        timeDf = [model.time for _ in 1:length(model.massDensity)] |> M -> reshape(M, (length(M), 1)) |> V -> DataFrame(V, [:time]);
-        idsDf = model.spaceTime.X |> M -> eachindex(IndexCartesian(), M) |> M -> reshape(M, (length(M), 1)) |> V -> [[v[1] for v in V] [v[2] for v in V]] |> V -> DataFrame(V, [:id_x, :id_y]);
-        coordDf = model.spaceTime.X |> M -> reshape(M, (length(M), 1)) |> V -> [[v[1] for v in V] [v[2] for v in V]] |> V -> DataFrame(V, [:coordinate_x, :coordinate_y]);
-        massDf = model.massDensity |> M -> reshape(M, (length(M), 1)) |> V -> DataFrame(V, [:massDensity]);
-        fluidVelDf = model.fluidVelocity |> M -> reshape(M, (length(M), 1)) |> V -> [[v[1] for v in V] [v[2] for v in V]] |> V -> DataFrame(V, [:fluidVelocity_x, :fluidVelocity_y]);
-        distributionsDf = model.distributions |> distributions -> [reshape(d, (length(d), 1)) for d in distributions] |> M -> DataFrame(hcat(M...), ["f$(i)" for i in 1:9]);
-        if tick == 0
-            CSV.write(".fluidTrj.csv", [tickDf timeDf idsDf coordDf massDf fluidVelDf distributionsDf])
-        else
-            CSV.write(".fluidTrj.csv", [tickDf timeDf idsDf coordDf massDf fluidVelDf distributionsDf], append = true)
-        end
+    fluidDf = DataFrame(
+        tick = tick,
+        time = model.time,
+        id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+        id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+        coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
+        coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+        massDensity = model.massDensity |> vec,
+        fluidVelocity_x = [velocity[1] for velocity in model.fluidVelocity] |> vec,
+        fluidVelocity_y = [velocity[2] for velocity in model.fluidVelocity] |> vec
+    ) # keyword argument constructor
+    distributionsDf = DataFrame(
+        vec.(model.distributions), ["f$(i)" for i in 1:length(model.distributions)]
+    ) # vector of vectors constructor
+
+    if !isfile("output.lbm/fluidTrj.csv")
+        CSV.write("output.lbm/fluidTrj.csv", [fluidDf distributionsDf])
+    else
+        CSV.write("output.lbm/fluidTrj.csv", [fluidDf distributionsDf], append = true)
+    end
+
+    # if there are particles in the system, their trajectories are stored as well
+    :ladd in model.schemes && writeParticlesTrajectories(model; tick = tick)
 end
+
+function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel; tick = 0)
+    particleDf = DataFrame(
+        tick = tick,
+        time = model.time,
+        particleId = particle.id,
+        position_x = particle.position[1],
+        position_y = particle.position[2],
+        velocity_x = particle.velocity[1],
+        velocity_y = particle.velocity[2],
+        angularVelocity = particle.angularVelocity
+    ) # keyword argument constructor
+    if tick == 0 && particle.id == 1
+    if !isfile("output.lbm/particlesTrj.csv")
+        CSV.write("output.lbm/particlesTrj.csv", particleDf)
+    else
+        CSV.write("output.lbm/particlesTrj.csv", particleDf, append = true)
+    end
+end
+
+function writeParticlesTrajectories(model::LBMmodel; tick = 0)
+    for particle in model.particles
+        writeParticleTrajectory(particle, model; tick = tick)
+    end
+end
+
+
+#=
+tick && time && particleId && position_x && position_y && velocity_x && velocity_y && angularVelocity
+=#
 
 #= ==========================================================================================
 =============================================================================================
-graphics stuff
+output management
 =============================================================================================
 ========================================================================================== =#
 
-function createFigDirs()
+function mkOutputDirs()
+    !isdir("output.lbm") && mkdir("output.lbm")
+end
+
+function mkFigDirs()
     !isdir("figs") && mkdir("figs")
     !isdir("figs/$(today())") && mkdir("figs/$(today())")
 end
 
-function createAnimDirs()
+function mkAnimDirs()
     !isdir("anims") && mkdir("anims")
     !isdir("anims/$(today())") && mkdir("anims/$(today())")
 end
@@ -173,6 +218,12 @@ function save_jpg(name::String, fig::Figure)
         run(`rm .output.png $namePNG`);
     end
 end
+
+#= ==========================================================================================
+=============================================================================================
+graphics stuff
+=============================================================================================
+========================================================================================== =#
 
 "the fluid velocity plot is generated and saved."
 function plotFluidVelocity(model::LBMmodel;
@@ -218,7 +269,7 @@ function plotFluidVelocity(model::LBMmodel;
     ylims!(xlb, xub);
 
     if saveFig
-        createFigDirs()
+        mkFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
     else
         return fig, ax
@@ -269,7 +320,7 @@ function plotMomentumDensity(model::LBMmodel;
     ylims!(xlb, xub);
 
     if saveFig
-        createFigDirs()
+        mkFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
     else
         return fig, ax
@@ -318,7 +369,7 @@ function plotMassDensity(model::LBMmodel;
     ylims!(xlb, xub);
 
     if saveFig
-        createFigDirs()
+        mkFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
     else
         return fig, ax
@@ -359,7 +410,7 @@ end
 #=     end =#
 #=     print("\r"); =#
 #==#
-#=     createAnimDirs() =#
+#=     mkAnimDirs() =#
 #=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
 #=     run(createVid) =#
 #=     run(`rm -r .tmp`) =#
@@ -400,7 +451,7 @@ end
 #=     end =#
 #=     print("\r"); =#
 #==#
-#=     createAnimDirs() =#
+#=     mkAnimDirs() =#
 #=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
 #=     run(createVid) =#
 #=     run(`rm -r .tmp`) =#
@@ -437,7 +488,7 @@ end
 #=     end =#
 #=     print("\r"); =#
 #==#
-#=     createAnimDirs() =#
+#=     mkAnimDirs() =#
 #=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
 #=     run(createVid) =#
 #=     run(`rm -r .tmp`) =#

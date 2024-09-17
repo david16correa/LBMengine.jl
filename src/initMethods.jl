@@ -6,7 +6,7 @@ init methods
 
 function addBead!(model::LBMmodel;
     massDensity = 0.1,
-    radio = 0.1,
+    radius = 0.1,
     position = :default, # default: origin (actual value is dimensionality dependent)
     velocity = :default, # default: static (actual value is dimensionality dependent)
     angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
@@ -14,10 +14,10 @@ function addBead!(model::LBMmodel;
     coupleForces = true,
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
-    beadGeometry(x::Vector{Float64}; radio2 = 0.0625) = sum(x.^2) < radio2
+    beadGeometry(x::Vector{Float64}; radius2 = 0.0625) = sum(x.^2) < radius2
 
     # the mass is found using the mass density
-    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radio2 = radio^2)) * model.spaceTime.Δx^model.spaceTime.dims
+    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.Δx^model.spaceTime.dims
 
     # position and velocity are defined if necessary
     position == :default && (position = [0. for _ in 1:model.spaceTime.dims])
@@ -27,11 +27,11 @@ function addBead!(model::LBMmodel;
 
     # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
     if model.spaceTime.dims == 2
-        momentOfInertia = 0.5 * mass * radio^2 # moment of inertia for a disk
+        momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
         angularVelocity == :default && (angularVelocity = 0.)
         angularMomentumInput = 0.
     elseif model.spaceTime.dims == 3
-        momentOfInertia = 0.4 * mass * radio^2 # moment of inertia for a sphere
+        momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
         angularVelocity == :default && (angularVelocity = [0., 0, 0])
         angularMomentumInput = [0., 0, 0]
     else
@@ -40,7 +40,8 @@ function addBead!(model::LBMmodel;
 
     # a new bead is defined and added to the model
     newBead = LBMparticle(
-        (;inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radio2 = radio^2), symmetries = [:spherical], coupleTorques, coupleForces),
+        length(model.particles) + 1,
+        (;inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), symmetries = [:spherical], coupleTorques, coupleForces),
         (; solidRegion = [], streamingInvasionRegions = []),
         position,
         velocity,
@@ -62,6 +63,9 @@ function addBead!(model::LBMmodel;
         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
         append!(model.schemes, [:bounceBack])
     end
+
+    # saving data
+    :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
 end
 
 "Initializes f_i to f^eq_i, which is the simplest strategy."
@@ -168,7 +172,6 @@ function modelInit(;
     end
 
     #= -------------------- boundary conditions (moving walls) ------------------- =#
-
     if solidNodeVelocity isa Array && solidNodeVelocity[1] isa Vector && size(solidNodeVelocity) == size(massDensity)
         maskedArray = [[0. for _ in 1:dims] for _ in solidNodeVelocity]
         maskedArray[wallRegion] = solidNodeVelocity[wallRegion]
@@ -215,10 +218,11 @@ function modelInit(;
         ) 
     for id in eachindex(velocities)]
 
-    #= --------------------------- initial distributions are found --------------------------- =#
-
-    saveData && append!(schemes, [:saveData])
-
+    #= ---------------------------------- saving data setup ---------------------------------- =#
+    if saveData
+        append!(schemes, [:saveData])
+        mkOutputDirs()
+    end
 
     #= ------------------------- the model is initialized ------------------------ =#
     model = LBMmodel(
@@ -237,7 +241,7 @@ function modelInit(;
         unique(schemes)
     );
 
-#= ---------------------------- consistency check ---------------------------- =#
+    #= ---------------------------- consistency check ---------------------------- =#
     # to ensure consistency, ρ, ρu and u are all found using the initial conditions of f_i
     hydroVariablesUpdate!(model);
     # if either ρ or u changed, the user is notified

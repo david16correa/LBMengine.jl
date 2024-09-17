@@ -15,6 +15,7 @@ LBMdistributions = Vector{Array{Float64}}
 
 # rigid moving particles
 mutable struct LBMparticle
+    id::Int64
     particleParams::NamedTuple # mass^-1, momentOfInertia^-1, solidRegionGenerator, symmetries
     boundaryConditionsParams::NamedTuple
     position::Vector{Float64}
