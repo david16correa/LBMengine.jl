@@ -127,9 +127,9 @@ saving data
 =============================================================================================
 ========================================================================================== =#
 
-function writeTrajectories(model::LBMmodel; tick = 0)
+function writeTrajectories(model::LBMmodel)
     fluidDf = DataFrame(
-        tick = tick,
+        tick = model.tick,
         time = model.time,
         id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
         id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
@@ -143,19 +143,15 @@ function writeTrajectories(model::LBMmodel; tick = 0)
         vec.(model.distributions), ["f$(i)" for i in 1:length(model.distributions)]
     ) # vector of vectors constructor
 
-    if !isfile("output.lbm/fluidTrj.csv")
-        CSV.write("output.lbm/fluidTrj.csv", [fluidDf distributionsDf])
-    else
-        CSV.write("output.lbm/fluidTrj.csv", [fluidDf distributionsDf], append = true)
-    end
+    CSV.write("output.lbm/fluidTrj_$(model.tick).csv", [fluidDf distributionsDf])
 
     # if there are particles in the system, their trajectories are stored as well
-    :ladd in model.schemes && writeParticlesTrajectories(model; tick = tick)
+    :ladd in model.schemes && writeParticlesTrajectories(model)
 end
 
-function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel; tick = 0)
+function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel)
     particleDf = DataFrame(
-        tick = tick,
+        tick = model.tick,
         time = model.time,
         particleId = particle.id,
         position_x = particle.position[1],
@@ -165,16 +161,16 @@ function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel; tick = 
         angularVelocity = particle.angularVelocity
     ) # keyword argument constructor
 
-    if !isfile("output.lbm/particlesTrj.csv")
+    if model.tick == 0 || !isfile("output.lbm/particlesTrj.csv")
         CSV.write("output.lbm/particlesTrj.csv", particleDf)
     else
         CSV.write("output.lbm/particlesTrj.csv", particleDf, append = true)
     end
 end
 
-function writeParticlesTrajectories(model::LBMmodel; tick = 0)
+function writeParticlesTrajectories(model::LBMmodel)
     for particle in model.particles
-        writeParticleTrajectory(particle, model; tick = tick)
+        writeParticleTrajectory(particle, model)
     end
 end
 

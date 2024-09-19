@@ -28,6 +28,7 @@ end
 
 mutable struct LBMmodel
     spaceTime::NamedTuple # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
+    tick::Int64
     time::Float64 # not in spaceTime bc NamedTuple are immutable!
     fluidParams::NamedTuple # speed of sound and its powers (c_s, c2_s, c4_s), relaxation time (τ)
     initialConditions::NamedTuple # ρ₀

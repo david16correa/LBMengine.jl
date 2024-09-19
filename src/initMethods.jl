@@ -144,7 +144,7 @@ function modelInit(;
     Δx_Δt = Δx/Δt |> Float64
     X = [[x[id] for id in Id |> Tuple]  for Id in eachindex(IndexCartesian(), massDensity)]
     spaceTime = (; x, X, Δx, Δt, Δx_Δt, dims); 
-    time = 0.;
+    tick, time = 0, 0.;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
@@ -227,6 +227,7 @@ function modelInit(;
     #= ------------------------- the model is initialized ------------------------ =#
     model = LBMmodel(
         spaceTime, # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
+        tick,
         time, # not in spaceTime bc NamedTuple are immutable!
         fluidParams, # speed of sound and its powers (c_s, c2_s, c4_s), relaxation time (τ)
         (; massDensity = massDensity), # ρ₀

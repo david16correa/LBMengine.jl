@@ -120,8 +120,8 @@ function tick!(model::LBMmodel)
             if :movingWalls in model.schemes
                 ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                 wi = model.velocities[id].w
-                uwdotci = pbcMatrixShift(model.boundaryConditionsParams.solidNodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
 
+                uwdotci = pbcMatrixShift(model.boundaryConditionsParams.solidNodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
                 streamedDistribution[conjugateInvasionRegion] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
             end
 
@@ -130,21 +130,22 @@ function tick!(model::LBMmodel)
                 ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                 wi = model.velocities[id].w
                 for particle in model.particles
-                    particleBoundaryNodes = particle.boundaryConditionsParams.streamingInvasionRegions[model.boundaryConditionsParams.oppositeVectorId[id]]
+                    conjugateBoundaryNodes = particle.boundaryConditionsParams.streamingInvasionRegions[model.boundaryConditionsParams.oppositeVectorId[id]]
 
                     # if the fluid did not bump into the particle, then the entire scheme can be skipped
-                    sum(particleBoundaryNodes) == 0 && break
+                    sum(conjugateBoundaryNodes) == 0 && break
 
                     # the solids momentum is transfered to the fluid
-                    uwdotci = pbcMatrixShift(particle.nodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
-                    streamedDistribution[particleBoundaryNodes] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[particleBoundaryNodes] .* uwdotci[particleBoundaryNodes]
+                    uw = particle.nodeVelocity + pbcMatrixShift(particle.nodeVelocity, model.velocities[id].c)
+                    uwdotci = vectorFieldDotVector(uw,ci)
+                    streamedDistribution[conjugateBoundaryNodes] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateBoundaryNodes] .* uwdotci[conjugateBoundaryNodes]
 
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
-                        sumTerm = collisionedDistributions[conjugateId][particleBoundaryNodes] + streamedDistribution[particleBoundaryNodes]
+                        sumTerm = collisionedDistributions[conjugateId][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
                         particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
                         particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
-                            sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[particleBoundaryNodes]]), ci
+                            sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
                         ))
                     end
                 end
@@ -158,6 +159,7 @@ function tick!(model::LBMmodel)
     # the new distributions and time are appended
     model.distributions = propagatedDistributions
     model.time += model.spaceTime.Δt
+    model.tick += 1
 
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
@@ -180,14 +182,14 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     if :saveData in model.schemes
         writingTimes = range(1, stop = length(time), step = ticksBetweenSaves) |> collect
-        writingTimes[end] != length(time) && @warn "Simulation will stop at t = $(time[writingTimes[end]]), as this is the last snapshot that will be recorded in the data."
+        writingTimes[end] != length(time) && @warn "Simulation time will be $(time[writingTimes[end]]), as this is the last snapshot that will be recorded in the data."
         time = time[1:writingTimes[end]]
     end
 
     for t in time |> eachindex
         tick!(model);
         verbose && t in outputTimes && print("\r t = $(model.time)")
-        :saveData in model.schemes && t in writingTimes && writeTrajectories(model; tick = t)
+        :saveData in model.schemes && t in writingTimes && writeTrajectories(model)
     end
     print("\r");
 
