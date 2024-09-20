@@ -55,17 +55,32 @@ function equilibriumDistribution(id::Int64, model::LBMmodel)
     return wi * model.massDensity + wi * (model.initialConditions.massDensity .* secondStep)
 end
 
-"calculates Ω at the last recorded time!"
-function collisionOperator(id::Int64, model::LBMmodel)
+#= "calculates Ω at the last recorded time!" =#
+#= function collisionOperator(id::Int64, model::LBMmodel) =#
+#=     # the Bhatnagar-Gross-Krook collision opeartor is used =#
+#=     BGK = -model.distributions[id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.relaxationTime * f =#
+#==#
+#=     # forcing terms are added =#
+#=     if :guo in model.schemes =#
+#=         return BGK + guoForcingTerm(id, model) =#
+#=     end =#
+#==#
+#=     return BGK =#
+#= end =#
+
+function collisionStep(model::LBMmodel)
+    # the equilibrium distributions are found
+    equilibriumDistributions = [equilibriumDistribution(id, model) for id in eachindex(model.velocities)]
+
     # the Bhatnagar-Gross-Krook collision opeartor is used
-    BGK = -model.distributions[id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.relaxationTime * f
+    Omega = [-model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions[id] - equilibriumDistributions[id]) for id in eachindex(model.velocities)]
 
     # forcing terms are added
     if :guo in model.schemes
-        return BGK + guoForcingTerm(id, model)
+        Omega = [Omega[id] + guoForcingTerm(id, model) for id in eachindex(model.velocities)]
     end
 
-    return BGK
+    return [model.distributions[id] + Omega[id] for id in eachindex(model.velocities)] 
 end
 
 function guoForcingTerm(id::Int64, model::LBMmodel)
@@ -87,7 +102,7 @@ time evolution
 
 function tick!(model::LBMmodel)
     # collision (or relaxation)
-    collisionedDistributions = [model.distributions[id] .+ collisionOperator(id, model) for id in eachindex(model.velocities)] 
+    collisionedDistributions = collisionStep(model)
 
     # propagated distributions will be saved in a new vector
     propagatedDistributions = [] |> LBMdistributions ;
