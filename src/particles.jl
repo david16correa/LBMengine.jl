@@ -44,15 +44,20 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
         solidRegion = [particle.particleParams.solidRegionGenerator(x - particle.position) for x in model.spaceTime.X]
         #= solidRegion != particle.boundaryConditionsParams.solidRegion && println("ups") =#
         model.spaceTime.dims < 3 && (solidRegion = sparse(solidRegion))
-        # the new streaming invasion regions are found
-        streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
-        interiorStreamingInvasionRegions = bounceBackPrep(solidRegion .|> b -> !b, model.velocities; returnStreamingInvasionRegions = true)
-        for id in eachindex(model.boundaryConditionsParams.oppositeVectorId)
-            streamingInvasionRegions[id] = streamingInvasionRegions[id] .|| interiorStreamingInvasionRegions[id]
+
+        particle.boundaryConditionsParams = (; solidRegion);
+
+        if :ladd in model.schemes
+            # the new streaming invasion regions are found
+            streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
+            interiorStreamingInvasionRegions = bounceBackPrep(solidRegion .|> b -> !b, model.velocities; returnStreamingInvasionRegions = true)
+            for id in eachindex(model.boundaryConditionsParams.oppositeVectorId)
+                streamingInvasionRegions[id] = streamingInvasionRegions[id] .|| interiorStreamingInvasionRegions[id]
+            end
+            # everything is stored in the original particle
+            particle.boundaryConditionsParams = merge(particle.boundaryConditionsParams, (; streamingInvasionRegions));
         end
 
-        # everything is stored in the original particle
-        particle.boundaryConditionsParams = (; solidRegion, streamingInvasionRegions);
     end
 
     # the solid velocity (momentum density / mass density) is found

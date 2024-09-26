@@ -12,6 +12,7 @@ function addBead!(model::LBMmodel;
     angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
     coupleTorques = false,
     coupleForces = true,
+    scheme = :default
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
     beadGeometry(x::Vector{Float64}; radius2 = 0.0625) = sum(x.^2) < radius2
@@ -55,7 +56,11 @@ function addBead!(model::LBMmodel;
     moveParticles!(length(model.particles), model; initialSetup = true)
 
     # the schemes of the model are managed
-    append!(model.schemes, [:ladd])
+    scheme == :default && (scheme = :psm)
+
+    @assert (newBead.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used"
+
+    append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
         wallRegion = [false for _ in model.massDensity] |> sparse

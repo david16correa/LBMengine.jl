@@ -146,7 +146,7 @@ function writeTrajectories(model::LBMmodel)
     CSV.write("output.lbm/fluidTrj_$(model.tick).csv", [fluidDf distributionsDf])
 
     # if there are particles in the system, their trajectories are stored as well
-    :ladd in model.schemes && writeParticlesTrajectories(model)
+    :ladd in model.schemes || :psm in model.schemes && writeParticlesTrajectories(model)
 end
 
 function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel)

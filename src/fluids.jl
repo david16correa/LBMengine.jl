@@ -42,13 +42,19 @@ lattice Boltzmann dynamics
 =============================================================================================
 ========================================================================================== =#
 
-function equilibriumDistribution(id::Int64, model::LBMmodel)
+function equilibriumDistribution(id::Int64, model::LBMmodel; particleId = :default)
     # the quantities to be used are saved separately
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
     wi = model.velocities[id].w
+
+    if particleId isa Int64
+        u = model.particles[particleId].nodeVelocity
+    else
+        u = model.fluidVelocity
+    end
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(model.fluidVelocity, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(model.fluidVelocity, model.fluidVelocity)/(2*model.fluidParams.c2_s)
+    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*model.fluidParams.c2_s)
 
     model.fluidParams.isFluidCompressible && return wi * ((secondStep .+ 1) .* model.massDensity)
 
@@ -75,6 +81,29 @@ function collisionStep(model::LBMmodel)
     # the Bhatnagar-Gross-Krook collision opeartor is used
     Omega = [-model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions[id] - equilibriumDistributions[id]) for id in eachindex(model.velocities)]
 
+    if :psm in model.schemes
+        for particle in model.particles
+            equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
+            E = particle.boundaryConditionsParams.solidRegion |> Array
+            B = model.fluidParams.relaxationTime/model.spaceTime.Δt - 0.5 |> tau_minus_half -> E * tau_minus_half ./ ((1 .- E) .+ tau_minus_half)
+            OmegaS = [ (model.boundaryConditionsParams.oppositeVectorId[id] |> conjugateId -> 
+                (model.distributions[conjugateId] - equilibriumDistributions[conjugateId] - model.distributions[id] + equilibriumDistributions_solidNodeVelocity[id])
+            ) for id in eachindex(model.velocities)]
+            Omega = [(1 .- B) .* Omega[id] + B .* OmegaS[id] for id in eachindex(model.velocities)]
+
+            # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
+            if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
+                for id in eachindex(model.velocities)[2:end]
+                    ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+                    sumTerm = B .* OmegaS[id]
+                    particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
+                    particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                        sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
+                    ))
+                end
+            end
+        end
+    end
     # forcing terms are added
     if :guo in model.schemes
         Omega = [Omega[id] + guoForcingTerm(id, model) for id in eachindex(model.velocities)]
@@ -179,7 +208,7 @@ function tick!(model::LBMmodel)
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
     # and particles are moved, if there are any
-    :ladd in model.schemes && (moveParticles!(model));
+    :ladd in model.schemes || :psm in model.schemes && (moveParticles!(model));
 end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = 10)
