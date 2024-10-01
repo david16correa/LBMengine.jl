@@ -6,6 +6,10 @@ misc functions
 
 mean(v) = sum(v) / length(v)
 
+macro Name(arg)
+   string(arg)
+end
+
 #= ==========================================================================================
 =============================================================================================
 scalar and vector fild arithmetic auxilary functions -
@@ -146,7 +150,7 @@ function writeTrajectories(model::LBMmodel)
     CSV.write("output.lbm/fluidTrj_$(model.tick).csv", [fluidDf distributionsDf])
 
     # if there are particles in the system, their trajectories are stored as well
-    :ladd in model.schemes || :psm in model.schemes && writeParticlesTrajectories(model)
+    (:ladd in model.schemes || :psm in model.schemes) && writeParticlesTrajectories(model)
 end
 
 function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel)
@@ -174,10 +178,25 @@ function writeParticlesTrajectories(model::LBMmodel)
     end
 end
 
+function writeTensor(model::LBMmodel, T::Array, name::String)
+    mkOutputDirs()
 
-#=
-tick && time && particleId && position_x && position_y && velocity_x && velocity_y && angularVelocity
-=#
+    metadataDf = DataFrame(
+        tick = model.tick,
+        time = model.time,
+        id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+        id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+        coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
+        coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+    ) # keyword argument constructor
+
+    component_labels = ["component_xx" "component_xy"; "component_yx" "component_yy"] |> vec
+    tensorDf = T |> vec |> v -> DataFrame(
+        vec.(v), component_labels
+    ) # vector of vectors constructor
+
+    CSV.write("output.lbm/$name.csv", [metadataDf tensorDf])
+end
 
 #= ==========================================================================================
 =============================================================================================

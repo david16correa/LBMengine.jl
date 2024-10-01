@@ -22,6 +22,12 @@ module LBMengine
     # main methods - dynamics
     export hydroVariablesUpdate!, LBMpropagate!
 
+    # extra methods - rheology
+    export viscousStressTensor
+
+    # extra methods - saving data
+    export writeTensor
+
     # non-exported functions
     #= export scalarFieldTimesVector =#
     #= export vectorFieldDotVector =#

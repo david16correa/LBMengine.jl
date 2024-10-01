@@ -12,7 +12,7 @@ function addBead!(model::LBMmodel;
     angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
     coupleTorques = false,
     coupleForces = true,
-    scheme = :default
+    scheme = :default # default: psm (partially saturated method)
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
     beadGeometry(x::Vector{Float64}; radius2 = 0.0625) = sum(x.^2) < radius2
@@ -53,8 +53,6 @@ function addBead!(model::LBMmodel;
     )
     append!(model.particles, [newBead]);
 
-    moveParticles!(length(model.particles), model; initialSetup = true)
-
     # the schemes of the model are managed
     scheme == :default && (scheme = :psm)
 
@@ -71,6 +69,8 @@ function addBead!(model::LBMmodel;
 
     # saving data
     :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
+
+    moveParticles!(length(model.particles), model; initialSetup = true)
 end
 
 "Initializes f_i to f^eq_i, which is the simplest strategy."

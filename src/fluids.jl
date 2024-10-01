@@ -61,18 +61,9 @@ function equilibriumDistribution(id::Int64, model::LBMmodel; particleId = :defau
     return wi * model.massDensity + wi * (model.initialConditions.massDensity .* secondStep)
 end
 
-#= "calculates Ω at the last recorded time!" =#
-#= function collisionOperator(id::Int64, model::LBMmodel) =#
-#=     # the Bhatnagar-Gross-Krook collision opeartor is used =#
-#=     BGK = -model.distributions[id] + equilibriumDistribution(id, model) |> f -> model.spaceTime.Δt/model.fluidParams.relaxationTime * f =#
-#==#
-#=     # forcing terms are added =#
-#=     if :guo in model.schemes =#
-#=         return BGK + guoForcingTerm(id, model) =#
-#=     end =#
-#==#
-#=     return BGK =#
-#= end =#
+function nonEquilibriumDistribution(id::Int64, model::LBMmodel)
+    return model.distributions[id] - equilibriumDistribution(id, model)
+end
 
 function collisionStep(model::LBMmodel)
     # the equilibrium distributions are found
@@ -84,8 +75,9 @@ function collisionStep(model::LBMmodel)
     if :psm in model.schemes
         for particle in model.particles
             equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
-            E = particle.boundaryConditionsParams.solidRegion |> Array
-            B = model.fluidParams.relaxationTime/model.spaceTime.Δt - 0.5 |> tau_minus_half -> E * tau_minus_half ./ ((1 .- E) .+ tau_minus_half)
+            E = particle.boundaryConditionsParams.solidRegion # fuzzy edges are still not implemented!
+            B = E |> Array
+            #= B = model.fluidParams.relaxationTime/model.spaceTime.Δt - 0.5 |> tau_minus_half -> E * tau_minus_half ./ ((1 .- E) .+ tau_minus_half) =#
             OmegaS = [ (model.boundaryConditionsParams.oppositeVectorId[id] |> conjugateId -> 
                 (model.distributions[conjugateId] - equilibriumDistributions[conjugateId] - model.distributions[id] + equilibriumDistributions_solidNodeVelocity[id])
             ) for id in eachindex(model.velocities)]
@@ -96,9 +88,9 @@ function collisionStep(model::LBMmodel)
                 for id in eachindex(model.velocities)[2:end]
                     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                     sumTerm = B .* OmegaS[id]
-                    particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
+                    particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm[E]) * ci)
                     particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
-                        sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
+                        sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
                     ))
                 end
             end
@@ -208,7 +200,7 @@ function tick!(model::LBMmodel)
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
     # and particles are moved, if there are any
-    :ladd in model.schemes || :psm in model.schemes && (moveParticles!(model));
+    (:ladd in model.schemes || :psm in model.schemes) && (moveParticles!(model));
 end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = 10)
@@ -224,18 +216,33 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
 
-    if :saveData in model.schemes
-        writingTimes = range(1, stop = length(time), step = ticksBetweenSaves) |> collect
-        writingTimes[end] != length(time) && @warn "Simulation time will be $(time[writingTimes[end]]), as this is the last snapshot that will be recorded in the data."
-        time = time[1:writingTimes[end]]
-    end
+    :saveData in model.schemes && mkOutputDirs()
 
     for t in time |> eachindex
         tick!(model);
         verbose && t in outputTimes && print("\r t = $(model.time)")
-        :saveData in model.schemes && t in writingTimes && writeTrajectories(model)
+        :saveData in model.schemes && (model.tick % ticksBetweenSaves == 0) && writeTrajectories(model)
     end
     print("\r");
 
     hydroVariablesUpdate!(model);
+end
+
+#= ==========================================================================================
+=============================================================================================
+rheology
+=============================================================================================
+========================================================================================== =#
+
+function viscousStressTensor(model)
+    # the non-equilibrium distributions are found
+    nonEquilibriumDistributions = [nonEquilibriumDistribution(id, model) for id in eachindex(model.velocities)]
+
+    # the (1 - Δt/2τ) factor is found beforehand
+    coeff = 1 - 0.5*model.spaceTime.Δt/model.fluidParams.relaxationTime
+
+    # the viscous stress tensor is returned
+    return [
+        -coeff * sum(model.velocities[id].c[alpha] * model.velocities[id].c[beta] * nonEquilibriumDistributions[id] for id in eachindex(model.velocities))
+    for alpha in 1:model.spaceTime.dims, beta in 1:model.spaceTime.dims]
 end
