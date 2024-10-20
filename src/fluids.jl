@@ -220,12 +220,13 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     for t in time |> eachindex
         tick!(model);
-        verbose && t in outputTimes && print("\r t = $(model.time)")
+        verbose && t in outputTimes && (print("\r t = $(model.time)"); flush(stdout))
         :saveData in model.schemes && (model.tick % ticksBetweenSaves == 0) && writeTrajectories(model)
     end
     print("\r");
 
     hydroVariablesUpdate!(model);
+    :saveData in model.schemes && writeTrajectories(model)
 end
 
 #= ==========================================================================================

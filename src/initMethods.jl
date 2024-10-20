@@ -15,7 +15,7 @@ function addBead!(model::LBMmodel;
     scheme = :default # default: psm (partially saturated method)
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
-    beadGeometry(x::Vector{Float64}; radius2 = 0.0625) = sum(x.^2) < radius2
+    beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2
 
     # the mass is found using the mass density
     mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.Δx^model.spaceTime.dims
@@ -94,7 +94,9 @@ function modelInit(;
     massDensity = :default, # default: ρ(x) = 1
     fluidVelocity = :default, # default: u(x) = 0
     velocities = :default, # default: chosen by dimensionality (D1Q3, D2Q9, or D3Q27)
-    relaxationTimeRatio = 0.8, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable
+    relaxationTimeRatio = :default, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable, default: 0.8
+    viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: it's value is taken to be such that the relaxationTime is 0.8Δt
+    collisionModel = :default, # {:bgk, :trt}, default: :bgk
     x = range(0, stop = 1, step = 0.01),
     dims = 2, # default mode must be added!!
     Δt = :default, # default: Δt = Δx
@@ -153,8 +155,29 @@ function modelInit(;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
-    relaxationTime = Δt * relaxationTimeRatio;
-    fluidParams = (; c_s, c2_s, c4_s, relaxationTime, isFluidCompressible);
+    collisionModel == :default && (collisionModel = :bgk)
+    @assert !((viscosity != :default) && (relaxationTimeRatio != :default)) "The viscosity and the relaxationTimeRatio should not be defined simultaneously!"
+
+    relaxationTimeRatio == :default && (relaxationTimeRatio = 0.8)
+
+    if viscosity == :default
+        relaxationTime = relaxationTimeRatio * Δt
+        viscosity = c2_s * (relaxationTime - Δt/2)
+    else
+        relaxationTime = viscosity/c2_s + Δt/2
+    end
+
+    if collisionModel == :bgk
+        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, isFluidCompressible);
+    elseif collisionModel == :trt
+        omegaPlus = viscosity/c2_s + 1/2 |> X -> 1/(X*Δt)
+        lambda = 1/4; # different choices of Λ lead to different stability behaviors! cf. Krueger p.429
+        omegaMinus = lambda / (1/(omegaPlus * Δt) - 1/2) + 1/2 |> X -> 1/(X*Δt)
+        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, omegaPlus, omegaMinus, isFluidCompressible);
+    else
+        error("Collision model $collisionModel is not implemented!")
+    end
+    append!(schemes, [collisionModel])
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
     wallRegion = [false for _ in massDensity]
