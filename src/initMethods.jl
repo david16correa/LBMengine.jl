@@ -64,7 +64,7 @@ function addBead!(model::LBMmodel;
         wallRegion = [false for _ in model.massDensity] |> sparse
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
-        append!(model.schemes, [:bounceBack])
+        scheme == :ladd && (append!(model.schemes, [:bounceBack]))
     end
 
     # saving data
@@ -167,21 +167,21 @@ function modelInit(;
         relaxationTime = viscosity/c2_s + Δt/2
     end
 
+    @assert (collisionModel == :bgk || collisionModel == :trt) "Collision model $collisionModel is not implemented!"
+
     if collisionModel == :bgk
-        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, isFluidCompressible);
+        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, isFluidCompressible);
     elseif collisionModel == :trt
         omegaPlus = viscosity/c2_s + 1/2 |> X -> 1/(X*Δt)
         lambda = 1/4; # different choices of Λ lead to different stability behaviors! cf. Krueger p.429
         omegaMinus = lambda / (1/(omegaPlus * Δt) - 1/2) + 1/2 |> X -> 1/(X*Δt)
-        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, omegaPlus, omegaMinus, isFluidCompressible);
-    else
-        error("Collision model $collisionModel is not implemented!")
+        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, omegaPlus, omegaMinus, isFluidCompressible);
     end
     append!(schemes, [collisionModel])
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
     wallRegion = [false for _ in massDensity]
-    if walledDimensions != :default
+    if walledDimensions != :default && length(walledDimensions) != 0
         wallRegion = wallNodes(massDensity; walledDimensions = walledDimensions); 
 
         append!(schemes, [:bounceBack])
@@ -193,7 +193,7 @@ function modelInit(;
     end
     dims <= 2 && (wallRegion = sparse(wallRegion))
 
-    if :bounceBack in schemes
+    if :bounceBack in schemes || :trt in schemes
         massDensity[wallRegion] .= 0;
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
         boundaryConditionsParams = merge(boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));

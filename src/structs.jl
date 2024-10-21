@@ -42,10 +42,14 @@ mutable struct LBMmodel
     particles::Vector{LBMparticle}
     schemes::Vector{Symbol}
     #= schemes implemented thus far:
+        :bgk (collision model, stable),
+        :trt (collision model, stable),
         :bounceBack (boundary conditions, stable),
         :movingWalls (boundary conditions, stable),
         :guo (forcing, stable),
         :shan (forcing, unstable),
-        :ladd (rigid moving particles, in development)
+        :ladd (rigid moving particles, stable)
+        :psm (rigid moving particles, stable)
+        :saveData (stable)
     =#
 end

@@ -69,8 +69,42 @@ function collisionStep(model::LBMmodel)
     # the equilibrium distributions are found
     equilibriumDistributions = [equilibriumDistribution(id, model) for id in eachindex(model.velocities)]
 
-    # the Bhatnagar-Gross-Krook collision opeartor is used
-    Omega = [-model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions[id] - equilibriumDistributions[id]) for id in eachindex(model.velocities)]
+    if :bgk in model.schemes
+        # the Bhatnagar-Gross-Krook collision opeartor is used
+        Omega = [-model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions[id] - equilibriumDistributions[id]) for id in eachindex(model.velocities)]
+    elseif :trt in model.schemes
+        # the collision opeartor is used
+        distributionsPlus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+        distributionsMinus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+        equilibriumDistributionsPlus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+        equilibriumDistributionsMinus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+        for id in eachindex(model.velocities)
+            conjugateId = model.boundaryConditionsParams.oppositeVectorId[id]
+            if distributionsPlus[id] == []
+                M = model.distributions[id] + model.distributions[conjugateId] |> M -> M/2
+                distributionsPlus[id] = M
+                distributionsPlus[conjugateId] = M
+            end
+            if distributionsMinus[id] == []
+                M = model.distributions[id] - model.distributions[conjugateId] |> M -> M/2
+                distributionsMinus[id] = M
+                distributionsMinus[conjugateId] = -M
+            end
+            if equilibriumDistributionsPlus[id] == []
+                M = equilibriumDistributions[id] + equilibriumDistributions[conjugateId] |> M -> M/2
+                equilibriumDistributionsPlus[id] = M
+                equilibriumDistributionsPlus[conjugateId] = M
+            end
+            if equilibriumDistributionsMinus[id] == []
+                M = equilibriumDistributions[id] - equilibriumDistributions[conjugateId] |> M -> M/2
+                equilibriumDistributionsMinus[id] = M
+                equilibriumDistributionsMinus[conjugateId] = -M
+            end
+        end
+        Omega = [
+            -model.fluidParams.omegaPlus * model.spaceTime.Δt * (distributionsPlus[id] - equilibriumDistributionsPlus[id]) - model.fluidParams.omegaMinus * model.spaceTime.Δt * (distributionsMinus[id] - equilibriumDistributionsMinus[id])
+        for id in eachindex(model.velocities)]
+    end
 
     if :psm in model.schemes
         for particle in model.particles
