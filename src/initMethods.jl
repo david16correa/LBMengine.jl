@@ -175,6 +175,7 @@ function modelInit(;
         omegaPlus = viscosity/c2_s + 1/2 |> X -> 1/(X*Δt)
         lambda = 1/4; # different choices of Λ lead to different stability behaviors! cf. Krueger p.429
         omegaMinus = lambda / (1/(omegaPlus * Δt) - 1/2) + 1/2 |> X -> 1/(X*Δt)
+        #= omegaMinus = 3/(16omegaPlus); # Kuron =#
         fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, omegaPlus, omegaMinus, isFluidCompressible);
     end
     append!(schemes, [collisionModel])
