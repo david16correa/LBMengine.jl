@@ -84,18 +84,15 @@ function collisionStep(model::LBMmodel)
                 M = model.distributions[id] + model.distributions[conjugateId] |> M -> M/2
                 distributionsPlus[id] = M
                 distributionsPlus[conjugateId] = M
-            end
-            if distributionsMinus[id] == []
+
                 M = model.distributions[id] - model.distributions[conjugateId] |> M -> M/2
                 distributionsMinus[id] = M
                 distributionsMinus[conjugateId] = -M
-            end
-            if equilibriumDistributionsPlus[id] == []
+
                 M = equilibriumDistributions[id] + equilibriumDistributions[conjugateId] |> M -> M/2
                 equilibriumDistributionsPlus[id] = M
                 equilibriumDistributionsPlus[conjugateId] = M
-            end
-            if equilibriumDistributionsMinus[id] == []
+
                 M = equilibriumDistributions[id] - equilibriumDistributions[conjugateId] |> M -> M/2
                 equilibriumDistributionsMinus[id] = M
                 equilibriumDistributionsMinus[conjugateId] = -M
