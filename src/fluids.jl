@@ -99,7 +99,7 @@ function collisionStep(model::LBMmodel)
             end
         end
         Omega = [
-            -model.fluidParams.omegaPlus * model.spaceTime.Δt * (distributionsPlus[id] - equilibriumDistributionsPlus[id]) - model.fluidParams.omegaMinus * model.spaceTime.Δt * (distributionsMinus[id] - equilibriumDistributionsMinus[id])
+            -model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus[id] - equilibriumDistributionsPlus[id]) - model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus[id] - equilibriumDistributionsMinus[id])
         for id in eachindex(model.velocities)]
     end
 
@@ -152,10 +152,10 @@ function guoForcingTerm(id::Int64, model::LBMmodel)
         return wi * Δt * (1 - Δt/(2 * model.fluidParams.relaxationTime)) * intermediateStep
     elseif :trt in model.schemes
         intermediateStep = vectorFieldDotVectorField(-U/c2_s + secondTerm, F)
-        plusPart = (1 - model.fluidParams.omegaPlus * Δt/2) * intermediateStep
+        plusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimePlus)) * intermediateStep
 
         intermediateStep = vectorFieldDotVector(F, ci/c2_s)
-        minusPart = (1 - model.fluidParams.omegaMinus * Δt/2) * intermediateStep
+        minusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimeMinus)) * intermediateStep
 
         return wi * Δt * (plusPart + minusPart)
     end
