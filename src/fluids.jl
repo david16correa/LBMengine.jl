@@ -138,12 +138,27 @@ end
 function guoForcingTerm(id::Int64, model::LBMmodel)
     # the quantities to be used are saved separately
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+    c2_s = model.fluidParams.c2_s
     wi = model.velocities[id].w
-    # the forcing term is found
-    firstTerm = [ci - u for u in model.fluidVelocity] / model.fluidParams.c2_s
-    secondTerm = vectorFieldDotVector(model.fluidVelocity, ci) |> udotci -> [ci * v for v in udotci]/model.fluidParams.c4_s
-    intermediateStep = vectorFieldDotVectorField(firstTerm + secondTerm, model.forceDensity)
-    return (1 - model.spaceTime.Δt/(2 * model.fluidParams.relaxationTime)) * wi * intermediateStep * model.spaceTime.Δt
+    U = model.fluidVelocity
+    F = model.forceDensity
+    Δt = model.spaceTime.Δt
+
+    # the forcing term is found (terms common for both collision methods are found first)
+    secondTerm = vectorFieldDotVector(U, ci) |> udotci -> [ci * v for v in udotci]/model.fluidParams.c4_s
+    if :bgk in model.schemes
+        firstTerm = [ci - u for u in U] / c2_s
+        intermediateStep = vectorFieldDotVectorField(firstTerm + secondTerm, F)
+        return wi * Δt * (1 - Δt/(2 * model.fluidParams.relaxationTime)) * intermediateStep
+    elseif :trt in model.schemes
+        intermediateStep = vectorFieldDotVectorField(-U/c2_s + secondTerm, F)
+        plusPart = (1 - model.fluidParams.omegaPlus * Δt/2) * intermediateStep
+
+        intermediateStep = vectorFieldDotVector(F, ci/c2_s)
+        minusPart = (1 - model.fluidParams.omegaMinus * Δt/2) * intermediateStep
+
+        return wi * Δt * (plusPart + minusPart)
+    end
 end
 
 #= ==========================================================================================
