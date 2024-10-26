@@ -97,6 +97,7 @@ function modelInit(;
     relaxationTimeRatio = :default, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable, default: 0.8
     viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: it's value is taken to be such that the relaxationTime is 0.8Δt
     collisionModel = :default, # {:bgk, :trt}, default: :bgk
+    kineticParameter = 0.25, # Λ, for :trt; different choices lead to different stability behaviors! Cf. Krüger p.429
     x = range(0, stop = 1, step = 0.01),
     dims = 2, # default mode must be added!!
     Δt = :default, # default: Δt = Δx
@@ -155,7 +156,7 @@ function modelInit(;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
-    collisionModel == :default && (collisionModel = :bgk)
+    collisionModel == :default && (collisionModel = :trt)
     @assert !((viscosity != :default) && (relaxationTimeRatio != :default)) "The viscosity and the relaxationTimeRatio should not be defined simultaneously!"
 
     relaxationTimeRatio == :default && (relaxationTimeRatio = 0.8)
@@ -173,9 +174,8 @@ function modelInit(;
         fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, isFluidCompressible);
     elseif collisionModel == :trt
         relaxationTimePlus = relaxationTime
-        lambda = 0.25; # different choices of Λ lead to different stability behaviors! Cf. Krüger p.429
-        #= lambda = viscosity^2/c4_s; # debug; here, :trt = :bgk =#
-        relaxationTimeMinus = c2_s * lambda / viscosity + Δt/2
+        kineticParameter == :debug && (kineticParameter = viscosity^2/(c4_s * Δt^2)) # here, :trt = :bgk
+        relaxationTimeMinus = kineticParameter * c2_s * Δt^2 / viscosity + Δt/2
         fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, relaxationTimePlus, relaxationTimeMinus, isFluidCompressible);
     end
     append!(schemes, [collisionModel])
