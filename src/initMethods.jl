@@ -118,6 +118,8 @@ function modelInit(;
     # if default conditions were chosen, ρ is built. Otherwise its dimensions are verified
     if massDensity == :default
         massDensity = [length(x) for _ in 1:dims] |> v -> ones(v...)
+    elseif massDensity isa Number
+        massDensity = [length(x) for _ in 1:dims] |> v -> massDensity * ones(v...)
     else
         size(massDensity) |> sizeM -> all(x -> x == sizeM[1], sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
     end
