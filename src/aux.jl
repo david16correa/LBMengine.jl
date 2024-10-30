@@ -6,10 +6,6 @@ misc functions
 
 mean(v) = sum(v) / length(v)
 
-macro Name(arg)
-   string(arg)
-end
-
 #= ==========================================================================================
 =============================================================================================
 scalar and vector fild arithmetic auxilary functions -
@@ -213,11 +209,6 @@ function mkFigDirs()
     !isdir("figs/$(today())") && mkdir("figs/$(today())")
 end
 
-function mkAnimDirs()
-    !isdir("anims") && mkdir("anims")
-    !isdir("anims/$(today())") && mkdir("anims/$(today())")
-end
-
 function save_jpg(name::String, fig::Figure)
     nameJPG = name*".jpg"
     save(".output.png", fig)
@@ -242,7 +233,7 @@ graphics stuff
 
 "the fluid velocity plot is generated and saved."
 function plotFluidVelocity(model::LBMmodel;
-    saveFig = true, 
+    saveFig = true,
     fluidVelocity = :default, 
     maximumFluidSpeed = :default
 )
@@ -390,127 +381,6 @@ function plotMassDensity(model::LBMmodel;
         return fig, ax
     end
 end
-
-#= "The animation of the fluid velocity evolution is created." =#
-#= function anim8fluidVelocity(model::LBMmodel; verbose = false, framerate = 30) =#
-#==#
-#=     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round) =#
-#==#
-#=     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V)); =#
-#==#
-#=     maximumFluidSpeed = 1.; =#
-#==#
-#=     isdir(".tmp") && run(`rm -r .tmp`) =#
-#=     mkdir(".tmp") =#
-#==#
-#=     fluidVelocities = [] |> Vector{Matrix{Vector{Float64}}}; =#
-#=     for t in eachindex(model.time) =#
-#=         hydroVariablesUpdate!(model; time = t); =#
-#=         append!(fluidVelocities, [model.fluidVelocity]); =#
-#=     end =#
-#==#
-#=     maximumFluidSpeed = (fluidVelocities .|> M -> norm.(M)) .|> maximum |> maximum =#
-#==#
-#==#
-#=     for t in eachindex(model.time) =#
-#=         animationFig, animationAx = plotFluidVelocity(model;  =#
-#=             saveFig = false,  =#
-#=             t = model.time[t], =#
-#=             fluidVelocity = fluidVelocities[t], =#
-#=             maximumFluidSpeed = maximumFluidSpeed =#
-#=         ) =#
-#=         save(".tmp/$(t).png", animationFig) =#
-#==#
-#=         verbose && t in outputTimes && print("\r t = $(model.time[t])") =#
-#=     end =#
-#=     print("\r"); =#
-#==#
-#=     mkAnimDirs() =#
-#=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
-#=     run(createVid) =#
-#=     run(`rm -r .tmp`) =#
-#=     name = "anims/$(today())/LBM simulation $(Time(now())).mp4" =#
-#=     run(`mv anims/.output.mp4 $(name)`); =#
-#= end =#
-
-#= "The animation of the fluid velocity evolution is created." =#
-#= function anim8momentumDensity(model::LBMmodel; verbose = false, framerate = 30) =#
-#==#
-#=     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round) =#
-#==#
-#=     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V)); =#
-#==#
-#=     maximumMomentumDensity = 1.; =#
-#==#
-#=     isdir(".tmp") && run(`rm -r .tmp`) =#
-#=     mkdir(".tmp") =#
-#==#
-#=     momentumDensities = [] |> Vector{Matrix{Vector{Float64}}}; =#
-#=     for t in eachindex(model.time) =#
-#=         hydroVariablesUpdate!(model; time = t); =#
-#=         append!(momentumDensities, [model.momentumDensity]); =#
-#=     end =#
-#==#
-#=     maximumMomentumDensity = (momentumDensities .|> M -> norm.(M)) .|> maximum |> maximum =#
-#==#
-#=     for t in eachindex(model.time) =#
-#=         animationFig, animationAx = plotMomentumDensity(model;  =#
-#=             saveFig = false, =#
-#=             t = model.time[t], =#
-#=             momentumDensity = momentumDensities[t], =#
-#=             maximumMomentumDensity = maximumMomentumDensity =#
-#=         ) =#
-#=         save(".tmp/$(t).png", animationFig) =#
-#==#
-#=         verbose && t in outputTimes && print("\r t = $(model.time[t])") =#
-#=     end =#
-#=     print("\r"); =#
-#==#
-#=     mkAnimDirs() =#
-#=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
-#=     run(createVid) =#
-#=     run(`rm -r .tmp`) =#
-#=     name = "anims/$(today())/LBM simulation $(Time(now())).mp4" =#
-#=     run(`mv anims/.output.mp4 $(name)`); =#
-#= end =#
-
-#= "The animation of the mass density evolution is created." =#
-#= function anim8massDensity(model::LBMmodel; verbose = false, framerate = 30) =#
-#==#
-#=     verbose && (outputTimes = range(1, stop = length(model.time), length = 50) |> collect .|> round) =#
-#==#
-#=     xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V)); =#
-#==#
-#=     massDensities = [massDensityGet(model; time = t) for t in eachindex(model.time)] =#
-#==#
-#=     maximumMassDensity = (massDensities .|> maximum) |> maximum =#
-#=     minimumMassDensity = [massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum for massDensity in massDensities] |> minimum |> x -> maximum([0, x]) =#
-#==#
-#=     isdir(".tmp") && run(`rm -r .tmp`) =#
-#=     mkdir(".tmp") =#
-#==#
-#=     for t in eachindex(model.time) =#
-#=         animationFig, animationAx = plotMassDensity(model;  =#
-#=             saveFig = false, =#
-#=             t = model.time[t], =#
-#=             massDensity = massDensities[t], =#
-#=             maximumMassDensity = maximumMassDensity, =#
-#=             minimumMassDensity = minimumMassDensity =#
-#=         ) =#
-#=         save(".tmp/$(t).png", animationFig) =#
-#==#
-#=         verbose && t in outputTimes && print("\r t = $(model.time[t])") =#
-#=     end =#
-#=     print("\r"); =#
-#==#
-#=     mkAnimDirs() =#
-#=     createVid = `ffmpeg -loglevel quiet -framerate $(framerate) -i .tmp/%d.png -c:v libx264 -pix_fmt yuv420p anims/.output.mp4` =#
-#=     run(createVid) =#
-#=     run(`rm -r .tmp`) =#
-#=     name = "anims/$(today())/LBM simulation $(Time(now())).mp4" =#
-#=     run(`mv anims/.output.mp4 $(name)`); =#
-#= end =#
-
 
 #= ==========================================================================================
 =============================================================================================

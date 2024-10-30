@@ -10,7 +10,7 @@ struct LBMvelocity
     w::Float64
 end
 
-# f_i(x) for all i in the model, independent of time!
+# f_i(x) for all i in the model
 LBMdistributions = Vector{Array{Float64}}
 
 # rigid moving particles

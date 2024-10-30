@@ -13,9 +13,8 @@ module LBMengine
     # structs
     export LBMvelocity, LBMparticle, LBMdistributions, LBMmodel
 
-    # aux methods - graphics stuff
+    # aux methods - some quick plots
     export plotFluidVelocity, plotMomentumDensity, plotMassDensity
-    export anim8fluidVelocity, anim8momentumDensity, anim8massDensity
 
     # main methods - initialization
     export modelInit, addBead!
@@ -27,31 +26,4 @@ module LBMengine
 
     # extra methods - saving data
     export writeTensor
-
-    # non-exported functions
-    #= export scalarFieldTimesVector =#
-    #= export vectorFieldDotVector =#
-    #= export vectorFieldDotVectorField =#
-    #= export cross =#
-    #= export vectorCrossVectorField =#
-    #= export vectorFieldCrossVector =#
-    #= export vectorFieldCrossVectorField =#
-    #= export pbcIndexShift =#
-    #= export pbcMatrixShift =#
-    #= export wallNodes =#
-    #= export bounceBackPrep =#
-    #= export createFigDirs =#
-    #= export createAnimDirs =#
-    #= export save_jpg =#
-    #= export massDensityGet =#
-    #= export momentumDensityGet =#
-    #= export equilibriumDistribution =#
-    #= export collisionOperator =#
-    #= export guoForcingTerm =#
-    #= export tick! =#
-    #= export LBMpropagate! =#
-    #= export findInitialConditions =#
-    #= export eulerStep! =#
-    #= export moveParticles! =#
-    #= export writeTrajectories =#
 end # module LBMengine
