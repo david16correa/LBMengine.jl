@@ -104,7 +104,7 @@ function collisionStep(model::LBMmodel)
     end
 
     if :psm in model.schemes
-        if :bkg in model.schemes
+        if :bgk in model.schemes
             for particle in model.particles
                 equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
                 E = particle.boundaryConditionsParams.solidRegion # fuzzy edges are still not implemented!

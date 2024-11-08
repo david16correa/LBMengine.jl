@@ -55,6 +55,7 @@ function addBead!(model::LBMmodel;
 
     # the schemes of the model are managed
     scheme == :default && (scheme = :psm)
+    @assert (scheme == :psm || scheme == :ladd) "$(scheme) cannot be used as a particle-fluid collision scheme!"
 
     @assert (newBead.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used"
 
