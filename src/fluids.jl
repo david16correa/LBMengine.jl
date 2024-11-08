@@ -98,31 +98,79 @@ function collisionStep(model::LBMmodel)
                 equilibriumDistributionsMinus[conjugateId] = -M
             end
         end
-        Omega = [
-            -model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus[id] - equilibriumDistributionsPlus[id]) - model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus[id] - equilibriumDistributionsMinus[id])
-        for id in eachindex(model.velocities)]
+        OmegaPlus = [-model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus[id] - equilibriumDistributionsPlus[id]) for id in eachindex(model.velocities)]
+        OmegaMinus = [-model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus[id] - equilibriumDistributionsMinus[id]) for id in eachindex(model.velocities)]
+        Omega = [OmegaPlus[id] + OmegaMinus[id] for id in eachindex(model.velocities)]
     end
 
     if :psm in model.schemes
-        for particle in model.particles
-            equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
-            E = particle.boundaryConditionsParams.solidRegion # fuzzy edges are still not implemented!
-            B = E |> Array
-            #= B = model.fluidParams.relaxationTime/model.spaceTime.Δt - 0.5 |> tau_minus_half -> E * tau_minus_half ./ ((1 .- E) .+ tau_minus_half) =#
-            OmegaS = [ (model.boundaryConditionsParams.oppositeVectorId[id] |> conjugateId -> 
-                (model.distributions[conjugateId] - equilibriumDistributions[conjugateId] - model.distributions[id] + equilibriumDistributions_solidNodeVelocity[id])
-            ) for id in eachindex(model.velocities)]
-            Omega = [(1 .- B) .* Omega[id] + B .* OmegaS[id] for id in eachindex(model.velocities)]
+        if :bkg in model.schemes
+            for particle in model.particles
+                equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
+                E = particle.boundaryConditionsParams.solidRegion # fuzzy edges are still not implemented!
+                B = E |> Array
+                #= B = model.fluidParams.relaxationTime/model.spaceTime.Δt - 0.5 |> tau_minus_half -> E * tau_minus_half ./ ((1 .- E) .+ tau_minus_half) =#
+                OmegaS = [ (model.boundaryConditionsParams.oppositeVectorId[id] |> conjugateId ->
+                    (model.distributions[conjugateId] - equilibriumDistributions[conjugateId] - model.distributions[id] + equilibriumDistributions_solidNodeVelocity[id])
+                ) for id in eachindex(model.velocities)]
+                Omega = [(1 .- B) .* Omega[id] + B .* OmegaS[id] for id in eachindex(model.velocities)]
 
-            # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
-            if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
-                for id in eachindex(model.velocities)[2:end]
-                    ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
-                    sumTerm = B .* OmegaS[id]
-                    particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm[E]) * ci)
-                    particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
-                        sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
-                    ))
+                # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
+                if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
+                    for id in eachindex(model.velocities)[2:end]
+                        ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+                        sumTerm = B .* OmegaS[id]
+                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm[E]) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                            sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
+                        ))
+                    end
+                end
+            end
+
+        elseif :trt in model.schemes
+            for particle in model.particles
+                equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
+                E = particle.boundaryConditionsParams.solidRegion # fuzzy edges are still not implemented!
+
+                equilibriumDistributions_solidNodeVelocityPlus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+                equilibriumDistributions_solidNodeVelocityMinus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+
+                for id in eachindex(model.velocities)
+                    conjugateId = model.boundaryConditionsParams.oppositeVectorId[id]
+                    if equilibriumDistributions_solidNodeVelocityPlus[id] == []
+                        M = equilibriumDistributions_solidNodeVelocity[id] + equilibriumDistributions_solidNodeVelocity[conjugateId] |> M -> M/2
+                        equilibriumDistributions_solidNodeVelocityPlus[id] = M
+                        equilibriumDistributions_solidNodeVelocityPlus[conjugateId] = M
+
+                        M = equilibriumDistributions_solidNodeVelocity[id] - equilibriumDistributions_solidNodeVelocity[conjugateId] |> M -> M/2
+                        equilibriumDistributions_solidNodeVelocityMinus[id] = M
+                        equilibriumDistributions_solidNodeVelocityMinus[conjugateId] = -M
+                    end
+                end
+
+                Bplus = E |> Array
+                Bminus = E |> Array
+                #= B = model.fluidParams.relaxationTime/model.spaceTime.Δt - 0.5 |> tau_minus_half -> E * tau_minus_half ./ ((1 .- E) .+ tau_minus_half) =#
+                Omega_fluid = [Omega[id] - Bplus .* OmegaPlus[id] - Bminus .* OmegaMinus[id] for id in eachindex(model.velocities)]
+
+                Omega_solid = [
+                    - Bplus .* (equilibriumDistributionsPlus[id] - equilibriumDistributions_solidNodeVelocityPlus[id]) -
+                    Bminus .* (2 * distributionsMinus[id] - equilibriumDistributionsMinus[id] - equilibriumDistributions_solidNodeVelocityMinus[id])
+                for id in eachindex(model.velocities)]
+
+                Omega = [Omega_fluid[id] + Omega_solid[id] for id in eachindex(model.velocities)]
+
+                # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
+                if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
+                    for id in eachindex(model.velocities)[2:end]
+                        ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+                        sumTerm = Omega_solid[id]
+                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm[E]) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                            sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
+                        ))
+                    end
                 end
             end
         end
