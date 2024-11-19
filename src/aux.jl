@@ -77,7 +77,7 @@ function wallNodes(massDensity::Array{Float64};
 )
     # the size, dimensions, and side length of the density field are saved
     sizeM = size(massDensity)
-    dims, len = length(sizeM), sizeM[1];
+    dims, lens = length(sizeM), sizeM;
 
     # the wallMap is initialized as an boolean array filled with zeroes,
     # and the indices of the density field are saved.
@@ -89,13 +89,14 @@ function wallNodes(massDensity::Array{Float64};
 
     # for each dimension, a padding will be added. To do this, a set of auxilary indices will be needed.
     auxIndices = copy(indices);
-    paddingRanges = (1:1, len:len);
 
     # the padding is added in every dimension
-    for id in walledDimensions, paddingRange in paddingRanges
-        auxIndices[id] = paddingRange;
-        wallMap[auxIndices...] .= 1;
-        auxIndices = copy(indices)
+    for id in walledDimensions
+        for paddingRange in (1:1, lens[id]:lens[id])
+            auxIndices[id] = paddingRange;
+            wallMap[auxIndices...] .= 1;
+            auxIndices = copy(indices)
+        end
     end
 
     #  the final wall map is returned as a sparse matrix
@@ -237,7 +238,13 @@ function plotFluidVelocity(model::LBMmodel;
     fluidVelocity = :default, 
     maximumFluidSpeed = :default
 )
-    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+    lbs = []
+    ubs = []
+    for id in 1:model.spaceTime.dims
+        lb, ub = model.spaceTime.coordinates[id] |> V -> (minimum(V), maximum(V));
+        append!(lbs, [lb])
+        append!(ubs, [ub])
+    end
 
     t = model.time
 
@@ -248,12 +255,12 @@ function plotFluidVelocity(model::LBMmodel;
     end
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(fluidVelocity)/model.fluidParams.c_s, alpha = 0.7,
+    fig, ax, hm = heatmap(model.spaceTime.coordinates[1], model.spaceTime.coordinates[2], norm.(fluidVelocity)/model.fluidParams.c_s, alpha = 0.7,
         colorrange = (0, maximumFluidSpeed/model.fluidParams.c_s), 
         highclip = :red, # truncate the colormap 
         axis=(
             title = "fluid velocity, t = $(t |> x -> round(x; digits = 2))",
-            aspect = 1,
+            aspect = lbs[1]/lbs[2],
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
@@ -261,18 +268,20 @@ function plotFluidVelocity(model::LBMmodel;
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
     #--------------------------------------vector field---------------------------------------
-    indices = range(1, stop = length(model.spaceTime.x), length = 11) |> collect .|> round .|> Int64
-    vectorFieldX = model.spaceTime.x[indices];
-    pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
-    vec = [fluidVelocity[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
+    indices_x = range(1, stop = length(model.spaceTime.coordinates[1]), length = 11) |> collect .|> round .|> Int64
+    indices_y = range(1, stop = length(model.spaceTime.coordinates[2]), length = 11) |> collect .|> round .|> Int64
+    vectorFieldX = model.spaceTime.coordinates[1][indices_x];
+    vectorFieldY = model.spaceTime.coordinates[2][indices_y];
+    pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldY];
+    vec = [fluidVelocity[i,j] for i ∈ eachindex(model.spaceTime.coordinates[1])[indices_x] for j ∈ eachindex(model.spaceTime.coordinates[2])[indices_y]];
     vec = 0.07 .* vec ./ maximumFluidSpeed;
     nonZeroVec = (vec .|> norm) .> 0.007
     arrows!(fig[1,1], pos[nonZeroVec], vec[nonZeroVec],
         arrowsize = 10,
         align = :center
     );
-    xlims!(xlb, xub);
-    ylims!(xlb, xub);
+    xlims!(lbs[1], ubs[1]);
+    ylims!(lbs[2], ubs[2]);
 
     if saveFig
         mkFigDirs()
@@ -288,7 +297,13 @@ function plotMomentumDensity(model::LBMmodel;
     momentumDensity = :default, 
     maximumMomentumDensity = :default
 )
-    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+    lbs = []
+    ubs = []
+    for id in 1:model.spaceTime.dims
+        lb, ub = model.spaceTime.coordinates[id] |> V -> (minimum(V), maximum(V));
+        append!(lbs, [lb])
+        append!(ubs, [ub])
+    end
 
     t = model.time
 
@@ -299,12 +314,12 @@ function plotMomentumDensity(model::LBMmodel;
     end
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, norm.(momentumDensity), alpha = 0.7,
+    fig, ax, hm = heatmap(model.spaceTime.coordinates[1], model.spaceTime.coordinates[2], norm.(momentumDensity), alpha = 0.7,
         colorrange = (0, maximumMomentumDensity), 
         highclip = :red, # truncate the colormap 
         axis=(
             title = "momentum density, t = $(t |> x -> round(x; digits = 2))",
-            aspect = 1,
+            aspect = lbs[1]/lbs[2],
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
@@ -312,18 +327,20 @@ function plotMomentumDensity(model::LBMmodel;
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
     #--------------------------------------vector field---------------------------------------
-    indices = range(1, stop = length(model.spaceTime.x), length = 11) |> collect .|> round .|> Int64
-    vectorFieldX = model.spaceTime.x[indices];
-    pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldX];
-    vec = [momentumDensity[i,j] for i ∈ eachindex(model.spaceTime.x)[indices] for j ∈ eachindex(model.spaceTime.x)[indices]];
+    indices_x = range(1, stop = length(model.spaceTime.coordinates[1]), length = 11) |> collect .|> round .|> Int64
+    indices_y = range(1, stop = length(model.spaceTime.coordinates[2]), length = 11) |> collect .|> round .|> Int64
+    vectorFieldX = model.spaceTime.coordinates[1][indices_x];
+    vectorFieldY = model.spaceTime.coordinates[2][indices_y];
+    pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldY];
+    vec = [momentumDensity[i,j] for i ∈ eachindex(model.spaceTime.coordinates[1])[indices_x] for j ∈ eachindex(model.spaceTime.coordinates[2])[indices_y]];
     vec = 0.07 .* vec ./ maximumMomentumDensity;
     nonZeroVec = (vec .|> norm) .> 0.007
     arrows!(fig[1,1], pos[nonZeroVec], vec[nonZeroVec],
         arrowsize = 10, 
         align = :center
     );
-    xlims!(xlb, xub);
-    ylims!(xlb, xub);
+    xlims!(lbs[1], ubs[1]);
+    ylims!(lbs[2], ubs[2]);
 
     if saveFig
         mkFigDirs()
@@ -341,7 +358,13 @@ function plotMassDensity(model::LBMmodel;
     maximumMassDensity = :default,
     minimumMassDensity = :default
 )
-    xlb, xub = model.spaceTime.x |> V -> (minimum(V), maximum(V));
+    lbs = []
+    ubs = []
+    for id in 1:model.spaceTime.dims
+        lb, ub = model.spaceTime.coordinates[id] |> V -> (minimum(V), maximum(V));
+        append!(lbs, [lb])
+        append!(ubs, [ub])
+    end
 
     t = model.time
 
@@ -359,20 +382,20 @@ function plotMassDensity(model::LBMmodel;
     maximumMassDensity ≈ minimumMassDensity && (maximumMassDensity = 1);
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.x, model.spaceTime.x, massDensity, 
+    fig, ax, hm = heatmap(model.spaceTime.coordinates[1], model.spaceTime.coordinates[2], massDensity,
         colorrange = (minimumMassDensity, maximumMassDensity), 
         lowclip = :black, # truncate the colormap 
         axis=(
             title = "mass density, t = $(t |> x -> round(x; digits = 2))",
-            aspect = 1,
+            aspect = lbs[1]/lbs[2],
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
     Colorbar(fig[:, end+1], hm,
         #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
     );
-    xlims!(xlb, xub);
-    ylims!(xlb, xub);
+    xlims!(lbs[1], ubs[1]);
+    ylims!(lbs[2], ubs[2]);
 
     if saveFig
         mkFigDirs()

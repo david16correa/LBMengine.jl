@@ -120,8 +120,8 @@ function collisionStep(model::LBMmodel)
                     for id in eachindex(model.velocities)[2:end]
                         ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                         sumTerm = B .* OmegaS[id]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm[E]) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm[E]) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
                         ))
                     end
@@ -166,8 +166,8 @@ function collisionStep(model::LBMmodel)
                     for id in eachindex(model.velocities)[2:end]
                         ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                         sumTerm = Omega_solid[id]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm[E]) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm[E]) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
                         ))
                     end
@@ -273,8 +273,8 @@ function tick!(model::LBMmodel)
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
                         sumTerm = collisionedDistributions[conjugateId][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.Δx^model.spaceTime.dims * sum(sumTerm) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.Δx^model.spaceTime.dims * cross(
+                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
                         ))
                     end

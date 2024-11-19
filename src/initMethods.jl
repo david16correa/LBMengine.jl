@@ -99,7 +99,13 @@ function modelInit(;
     viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: it's value is taken to be such that the relaxationTime is 0.8Δt
     collisionModel = :default, # {:bgk, :trt}, default: :bgk
     kineticParameter = 0.25, # Λ, for :trt; different choices lead to different stability behaviors! Cf. Krüger p.429
-    x = range(0, stop = 1, step = 0.01),
+    x = :default,
+    y = :default,
+    z = :default,
+    xlims = :default,
+    ylims = :default,
+    zlims = :default,
+    latticeParameter = :default,
     dims = 2, # default mode must be added!!
     Δt = :default, # default: Δt = Δx
     walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
@@ -116,23 +122,65 @@ function modelInit(;
     kwInitialConditions = (; )
     boundaryConditionsParams = (; )
 
+    #= -------------------------- space time is sorted out -------------------------- =#
+    @assert !(x != :default && xlims != :default) "`x` and `xlims` should not be defined simultaneously!"
+    @assert !(y != :default && ylims != :default) "`y` and `ylims` should not be defined simultaneously!"
+    @assert !(z != :default && zlims != :default) "`z` and `zlims` should not be defined simultaneously!"
+    @assert !((x != :default || y != :default || z != :default) && latticeParameter != :default) "The coordinates and the lattice paramter  should not be defined simultaneously!"
+    [x,y,z][findall(x -> x isa AbstractRange, [x,y,z])] .|> step |> v -> all(x -> x == first(v), v) |> areAllStepsEqual -> @assert areAllStepsEqual "The step of all coordinates should be the same!"
+
+    if x == :default
+        if xlims == :default
+            xlims = (0, 1)
+        end
+        if latticeParameter == :default
+            latticeParameter = 0.01
+        end
+    else
+        xlims = (minimum(x), maximum(x))
+        latticeParameter = step(x)
+    end
+    x = range(xlims[1], stop = xlims[2], step = latticeParameter)
+
+    if y == :default 
+        if ylims == :default
+            ylims = (0, 1)
+        end
+    else
+        ylims = (minimum(y), maximum(y))
+    end
+    y = range(ylims[1], stop = ylims[2], step = latticeParameter)
+
+    if z == :default 
+        if zlims == :default
+            zlims = (0, 1)
+        end
+    else
+        zlims = (minimum(z), maximum(z))
+    end
+    z = range(zlims[1], stop = zlims[2], step = latticeParameter)
+
+    coordinates = [x,y,z][1:dims]
+
+
+    #= -------------------------- hydrodynamic variables -------------------------- =#
     # if default conditions were chosen, ρ is built. Otherwise its dimensions are verified
     if massDensity == :default
-        massDensity = [length(x) for _ in 1:dims] |> v -> ones(v...)
+        massDensity = [length(coordinates[id]) for id in 1:dims] |> v -> ones(v...)
     elseif massDensity isa Number
-        massDensity = [length(x) for _ in 1:dims] |> v -> massDensity * ones(v...)
+        massDensity = [length(coordinates[id]) for id in 1:dims] |> v -> massDensity * ones(v...)
     else
-        size(massDensity) |> sizeM -> all(x -> x == sizeM[1], sizeM) ? nothing : error("All dimensions must have the same length! size(ρ) = $(sizeM)")
+        @assert (size(massDensity) |> sizeM -> all(x -> x == sizeM[1], sizeM)) "All dimensions must have the same length! size(ρ) = $(sizeM)"
     end
 
-    # the side length is stored
-    N = size(massDensity) |> sizeM -> sizeM[1];
+    # # the side length is stored
+    # N = size(massDensity) |> sizeM -> sizeM[1];
 
     # if default conditions were chosen, u is built. Otherwise its dimensions are verified
     if fluidVelocity == :default
         fluidVelocity = [[0. for _ in 1:dims] for _ in massDensity];
     else
-        size(fluidVelocity) |> sizeU -> prod(i == j for i in sizeU for j in sizeU) ? nothing : error("All dimensions must have the same length! size(u) = $(sizeU)")
+        @assert (size(fluidVelocity) |> sizeU -> all(x -> x == sizeU[1], sizeU)) "All dimensions must have the same length! size(u) = $(sizeU)"
     end
 
     #= ------------------------ choosing the velocity set ----------------------- =#
@@ -148,13 +196,13 @@ function modelInit(;
     end
 
     #= ---------------- space and time variables are initialized ---------------- =#
-    Δx = step(x);
+    Δx = latticeParameter
     # by default Δt = Δx, as this is the most stable
     (Δt == :default) ? (Δt = Δx) : nothing
     # size Δx/Δt is often used, its value is stored to avoid redundant calculations
     Δx_Δt = Δx/Δt |> Float64
-    X = [[x[id] for id in Id |> Tuple]  for Id in eachindex(IndexCartesian(), massDensity)]
-    spaceTime = (; x, X, Δx, Δt, Δx_Δt, dims); 
+    X = [[coordinates[id][Id[id]] for id in Id |> Tuple |> eachindex]  for Id in eachindex(IndexCartesian(), massDensity)]
+    spaceTime = (; coordinates, X, latticeParameter, Δt, Δx_Δt, dims); 
     tick, time = 0, 0.;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
@@ -256,7 +304,7 @@ function modelInit(;
         mkOutputDirs()
     end
 
-    #= ------------------------- the model is initialized ------------------------ =#
+    #= ------------------------------ the model is initialized ------------------------------ =#
     model = LBMmodel(
         spaceTime, # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
         tick,
