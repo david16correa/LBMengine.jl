@@ -162,7 +162,7 @@ function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel)
         angularVelocity = particle.angularVelocity
     ) # keyword argument constructor
 
-    if model.tick == 0 || !isfile("output.lbm/particlesTrj.csv")
+    if !isfile("output.lbm/particlesTrj.csv")
         CSV.write("output.lbm/particlesTrj.csv", particleDf)
     else
         CSV.write("output.lbm/particlesTrj.csv", particleDf, append = true)

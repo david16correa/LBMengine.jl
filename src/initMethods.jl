@@ -18,7 +18,7 @@ function addBead!(model::LBMmodel;
     beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2
 
     # the mass is found using the mass density
-    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.Δx^model.spaceTime.dims
+    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.latticeParameter^model.spaceTime.dims
 
     # position and velocity are defined if necessary
     position == :default && (position = [0. for _ in 1:model.spaceTime.dims])
