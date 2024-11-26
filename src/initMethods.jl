@@ -68,10 +68,10 @@ function addBead!(model::LBMmodel;
         scheme == :ladd && (append!(model.schemes, [:bounceBack]))
     end
 
+    moveParticles!(length(model.particles), model; initialSetup = true)
+
     # saving data
     :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
-
-    moveParticles!(length(model.particles), model; initialSetup = true)
 end
 
 "Initializes f_i to f^eq_i, which is the simplest strategy."
