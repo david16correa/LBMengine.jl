@@ -109,6 +109,7 @@ function modelInit(;
     dims = 2, # default mode must be added!!
     Δt = :default, # default: Δt = Δx
     walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
+    dampenEcho = false, # use characteristic boundary conditions to absorb sound waves
     solidNodes = :default, # default: no solid nodes (other than the walls) 
     solidNodeVelocity = :default, # default: static solids - u = [0,0]
     isFluidCompressible = false,
@@ -179,6 +180,8 @@ function modelInit(;
     # if default conditions were chosen, u is built. Otherwise its dimensions are verified
     if fluidVelocity == :default
         fluidVelocity = [[0. for _ in 1:dims] for _ in massDensity];
+    elseif size(fluidVelocity) |> length == 1
+        fluidVelocity = [fluidVelocity |> Array{Float64} for _ in massDensity];
     else
         @assert (size(fluidVelocity) |> sizeU -> all(x -> x == sizeU[1], sizeU)) "All dimensions must have the same length! size(u) = $(sizeU)"
     end
@@ -234,9 +237,14 @@ function modelInit(;
     #= -------------------- boundary conditions (bounce back) -------------------- =#
     wallRegion = [false for _ in massDensity]
     if walledDimensions != :default && length(walledDimensions) != 0
-        wallRegion = wallNodes(massDensity; walledDimensions = walledDimensions); 
+        if dampenEcho
+            append!(schemes, [:cbc])
+        else
+            wallRegion = wallNodes(massDensity; walledDimensions = walledDimensions);
+            append!(schemes, [:bounceBack])
+        end
 
-        append!(schemes, [:bounceBack])
+        boundaryConditionsParams = merge(boundaryConditionsParams, (; walledDimensions));
     end
     if solidNodes != :default && size(solidNodes) == size(wallRegion)
         wallRegion = wallRegion .|| solidNodes

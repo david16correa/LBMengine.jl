@@ -209,6 +209,134 @@ function guoForcingTerm(id::Int64, model::LBMmodel)
     end
 end
 
+function cbcBoundaries!(model::LBMmodel)
+    # the macroscopic variables are bundled and their derivatives found
+    M = [[model.massDensity[id]; model.fluidVelocity[id][1]; model.fluidVelocity[id][2]] for id in eachindex(IndexCartesian(), model.massDensity)];
+    dxM = boundaryDerivative(M, model; targetDim = 1, h = model.spaceTime.latticeParameter);
+    dyM = boundaryDerivative(M, model; targetDim = 2, h = model.spaceTime.latticeParameter);
+
+    # some auxiliary variables are saved
+    sizeM = size(M)
+
+    # Heubes et al. found the choice of γ = 3/4 to be superior
+    gamma = 3/4;
+
+    # some fluid variables are declared locally for readibility
+    c_s = copy(model.fluidParams.c_s);
+    c2_s = copy(model.fluidParams.c2_s);
+    rho = copy(model.massDensity);
+    u = copy(model.fluidVelocity);
+
+    # all auxiliary variables needed for the method are initialized
+    xMat = fill(zeros(1,1), sizeM)
+    yMat = copy(xMat)
+    pX = copy(xMat)
+    pXinv = copy(xMat)
+    pY = copy(xMat)
+    pYinv = copy(xMat)
+    lambdaX = fill(zeros(1), sizeM)
+    lambdaY = copy(lambdaX)
+
+    # if absorbent walls are used around the x axis
+    if 1 in model.boundaryConditionsParams.walledDimensions
+        Lx = fill([], sizeM)
+        # auxiliary variables are found
+        Threads.@threads for id in eachindex(IndexCartesian(), M)|>collect|>m->m[[1;end],:]
+            @inbounds xMat[id] = [u[id][1] rho[id] 0; c2_s/rho[id] u[id][1] 0; 0 0 u[id][1]]
+            @inbounds yMat[id] = [u[id][2] 0 rho[id]; 0 u[id][2] 0; c2_s/rho[id] 0 u[id][2]]
+            @inbounds pX[id] = [c2_s -c_s*rho[id] 0; 0 0 1; c2_s c_s*rho[id] 0]
+            @inbounds pXinv[id] = [0.5/c2_s 0 0.5/c2_s; -0.5/(rho[id]*c_s) 0 0.5/(rho[id]*c_s); 0 1 0]
+            @inbounds pY[id] = pX[id][:, [1;3;2]]
+            @inbounds pYinv[id] = pXinv[id][[1;3;2], :]
+            @inbounds lambdaX[id] = [u[id][1]-c_s, u[id][1], u[id][1]+c_s]
+            @inbounds lambdaY[id] = [u[id][2]-c_s, u[id][2], u[id][2]+c_s]
+
+            @inbounds Lx[id] = [(M[id][2] - c_s) * (c2_s*dxM[id][1] - c_s*M[id][1]*dxM[id][2]);
+                M[id][2] * dxM[id][3];
+                (M[id][2] + c_s) * (c2_s*dxM[id][1] + c_s*M[id][1]*dxM[id][2])]
+        end
+        # left wall
+        for id in eachindex(IndexCartesian(), Lx)|>collect|>M->M[1,:], jd in eachindex(Lx[1])
+            lambdaX[id][jd] > 0 && @inbounds Lx[id][jd] = 0.
+        end
+        # right wall
+        for id in eachindex(IndexCartesian(), Lx)|>collect|>M->M[end,:], jd in eachindex(Lx[1])
+            lambdaX[id][jd] < 0 && @inbounds Lx[id][jd] = 0.
+        end
+    end
+
+    # if absorbent walls are used around the y axis
+    if 2 in model.boundaryConditionsParams.walledDimensions
+        Ly = fill([], sizeM)
+        # auxiliary variables are found
+        Threads.@threads for id in eachindex(IndexCartesian(), M)|>collect|>m->m[:,[1;end]]
+            @inbounds xMat[id] = [u[id][1] rho[id] 0; c2_s/rho[id] u[id][1] 0; 0 0 u[id][1]]
+            @inbounds yMat[id] = [u[id][2] 0 rho[id]; 0 u[id][2] 0; c2_s/rho[id] 0 u[id][2]]
+            @inbounds pX[id] = [c2_s -c_s*rho[id] 0; 0 0 1; c2_s c_s*rho[id] 0]
+            @inbounds pXinv[id] = [0.5/c2_s 0 0.5/c2_s; -0.5/(rho[id]*c_s) 0 0.5/(rho[id]*c_s); 0 1 0]
+            @inbounds pY[id] = pX[id][:, [1;3;2]]
+            @inbounds pYinv[id] = pXinv[id][[1;3;2], :]
+            @inbounds lambdaX[id] = [u[id][1]-c_s, u[id][1], u[id][1]+c_s]
+            @inbounds lambdaY[id] = [u[id][2]-c_s, u[id][2], u[id][2]+c_s]
+
+            @inbounds Ly[id] = [(M[id][3] - c_s) * (c2_s*dyM[id][1] - c_s*M[id][1]*dyM[id][3]);
+                M[id][3] * dyM[id][2];
+                (M[id][3] + c_s) * (c2_s*dyM[id][1] + c_s*M[id][1]*dyM[id][3])]
+        end
+        # bottom wall
+        for id in eachindex(IndexCartesian(), Ly)|>collect|>M->M[:,1], jd in eachindex(Ly[1])
+            lambdaY[id][jd] > 0 && @inbounds Ly[id][jd] = 0.
+        end
+        # top wall
+        for id in eachindex(IndexCartesian(), Ly)|>collect|>M->M[:,end], jd in eachindex(Ly[1])
+            lambdaY[id][jd] < 0 && @inbounds Ly[id][jd] = 0.
+        end
+    end
+
+    dtM = fill(zero(M[1]), sizeM);
+
+    # x boundaries
+    if 1 in model.boundaryConditionsParams.walledDimensions
+        Threads.@threads for id in eachindex(IndexCartesian(), M)|>collect|>m->m[[1;end],:]
+            @inbounds dtM[id] = -pXinv[id]*Lx[id] - gamma * yMat[id] * dyM[id]
+        end
+    end
+    # y boundaries
+    if 2 in model.boundaryConditionsParams.walledDimensions
+        Threads.@threads for id in eachindex(IndexCartesian(), M)|>collect|>m->m[:,[1;end]]
+            @inbounds dtM[id] = -pYinv[id]*Ly[id] - gamma * xMat[id] * dxM[id]
+        end
+    end
+    # corners
+    corners = fill([], 2);
+    corners[1] = [1;sizeM[1]];
+    corners[2] = [1;sizeM[2]];
+    if all(dim -> dim in model.boundaryConditionsParams.walledDimensions, [1;2])
+        Threads.@threads for id in eachindex(IndexCartesian(), M)|>collect|>m->m[corners...]
+            @inbounds dtM[id] = -pXinv[id]*Lx[id] - pYinv[id]*Ly[id]
+        end
+    end
+
+    # macroscopic variables are updated, and used to find new distributions for LBM
+    M += model.spaceTime.Δt*dtM
+    model.massDensity = [m[1] for m in M]
+    model.fluidVelocity = [m[2:3] for m in M]
+    equilibriumDistributions = [equilibriumDistribution(id, model) for id in eachindex(model.velocities)]
+
+    for id in eachindex(model.velocities)
+        # x boundaries
+        if 1 in model.boundaryConditionsParams.walledDimensions
+            model.distributions[id][1,:] = equilibriumDistributions[id][1,:]
+            model.distributions[id][end,:] = equilibriumDistributions[id][end,:]
+        end
+        # y boundaries
+        if 2 in model.boundaryConditionsParams.walledDimensions
+            model.distributions[id][:,1] = equilibriumDistributions[id][:,1]
+            model.distributions[id][:,end] = equilibriumDistributions[id][:,end]
+        end
+    end
+end
+
 #= ==========================================================================================
 =============================================================================================
 time evolution
@@ -290,6 +418,9 @@ function tick!(model::LBMmodel)
     model.distributions = propagatedDistributions
     model.time += model.spaceTime.Δt
     model.tick += 1
+
+    # characteristic boundary conditions
+    :cbc in model.schemes && cbcBoundaries!(model)
 
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);

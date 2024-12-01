@@ -8,7 +8,7 @@ mean(v) = sum(v) / length(v)
 
 #= ==========================================================================================
 =============================================================================================
-scalar and vector fild arithmetic auxilary functions -
+scalar and vector fild arithmetic auxiliary functions
 =============================================================================================
 ========================================================================================== =#
 
@@ -47,7 +47,54 @@ vectorFieldCrossVector(V::Array, W::Vector) = - vectorCrossVectorField(W, V)
 
 #= ==========================================================================================
 =============================================================================================
-shift auxilary functions 
+calculus
+=============================================================================================
+========================================================================================== =#
+
+function boundaryDerivative(f::Array, model::LBMmodel; targetDim = 1, h = 1)
+    # the derivative is initialized
+    Df = fill(zero(f[1]), size(f));
+    # the derivative with respect to either x or y is found; cbc is not implemented for 3 dimensions yet!
+    if targetDim == 1 # derivative with respect to x
+        if 1 in model.boundaryConditionsParams.walledDimensions
+            # forward difference for left boundary
+            Df[1,:] = -1.5*f[1,:] + 2*f[2,:] - 0.5*f[3,:];
+            # backward difference for right boundary
+            Df[end,:] = 1.5*f[end,:] - 2*f[end-1,:] + 0.5*f[end-2,:];
+        else
+            # central difference for left and right boundaries considering periodic boundary conditions
+            Df[[1;end], :] = 0.5(f[[2;1], :] - f[[end;end-1], :]);
+        end
+        # central difference for top and bottom boundaries
+        Df[2:end-1,[1;end]] = 0.5(f[3:end, [1;end]] - f[1:end-2, [1;end]]);
+    else # derivative with respect to y
+        if 2 in model.boundaryConditionsParams.walledDimensions
+            # forward difference for bottom boundary
+            Df[:,1] = -1.5*f[:,1] + 2*f[:,2] - 0.5*f[:,3];
+            # backward difference for top boundary
+            Df[:,end] = 1.5*f[:,end] - 2*f[:,end-1] + 0.5*f[:,end-2];
+        else
+            # central difference for bottom and top boundaries considering periodic boundary conditions
+            Df[:, [1;end]] = 0.5(f[:, [2;1]] - f[:, [end;end-1]]);
+        end
+        # central difference for left and right boundaries
+        Df[[1;end], 2:end-1] = 0.5(f[[1;end], 3:end] - f[[1;end], 1:end-2]);
+
+        # # forward difference for left boundary
+        # Df[:, 1] = 0.5(f[:, 2] - f[:, end]);
+        # # central difference for top and bottom boundaries
+        # Df[[1;end], 2:end-1] = 0.5(f[[1;end], 3:end] - f[[1;end], 1:end-2]);
+        # # backward difference for right boundary
+        # Df[:, end] = 0.5(f[:, 1] - f[:, end-1]);
+
+    end
+    # derivative is returned 
+    return Df ./ h
+end
+
+#= ==========================================================================================
+=============================================================================================
+shift auxiliary functions
 =============================================================================================
 ========================================================================================== =#
 
@@ -68,7 +115,7 @@ end
 
 #= ==========================================================================================
 =============================================================================================
-wall and fluid nodes functions 
+wall and fluid nodes functions
 =============================================================================================
 ========================================================================================== =#
 
@@ -87,7 +134,7 @@ function wallNodes(massDensity::Array{Float64};
     # by default, all dimensions are walled
     (walledDimensions == :default) ? (walledDimensions = eachindex(indices)) : nothing
 
-    # for each dimension, a padding will be added. To do this, a set of auxilary indices will be needed.
+    # for each dimension, a padding will be added. To do this, a set of auxiliary indices will be needed.
     auxIndices = copy(indices);
 
     # the padding is added in every dimension
@@ -260,7 +307,7 @@ function plotFluidVelocity(model::LBMmodel;
         highclip = :red, # truncate the colormap 
         axis=(
             title = "fluid velocity, t = $(t |> x -> round(x; digits = 2))",
-            aspect = lbs[1]/lbs[2],
+            aspect = ubs - lbs |> v -> v[1]/v[2]
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
@@ -319,7 +366,7 @@ function plotMomentumDensity(model::LBMmodel;
         highclip = :red, # truncate the colormap 
         axis=(
             title = "momentum density, t = $(t |> x -> round(x; digits = 2))",
-            aspect = lbs[1]/lbs[2],
+            aspect = ubs - lbs |> v -> v[1]/v[2]
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
@@ -387,7 +434,7 @@ function plotMassDensity(model::LBMmodel;
         lowclip = :black, # truncate the colormap 
         axis=(
             title = "mass density, t = $(t |> x -> round(x; digits = 2))",
-            aspect = lbs[1]/lbs[2],
+            aspect = ubs - lbs |> v -> v[1]/v[2]
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
