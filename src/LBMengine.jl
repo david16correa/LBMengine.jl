@@ -2,7 +2,7 @@ module LBMengine
     using SparseArrays
     using CairoMakie
     using DataFrames, CSV, Dates
-    import LinearAlgebra.dot, LinearAlgebra.norm, LinearAlgebra.diagm
+    import LinearAlgebra.dot, LinearAlgebra.norm
 
     include("structs.jl");
     include("aux.jl");
