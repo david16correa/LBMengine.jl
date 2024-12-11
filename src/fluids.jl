@@ -31,7 +31,7 @@ end
 function hydroVariablesUpdate!(model::LBMmodel; useEquilibriumScheme = false)
     model.massDensity = massDensityGet(model)
     model.momentumDensity = momentumDensityGet(model; useEquilibriumScheme = useEquilibriumScheme)
-    model.fluidVelocity = [[0.; 0] for _ in model.massDensity]
+    model.fluidVelocity = fill([0.; 0], size(model.massDensity))
     fluidIndices = (model.massDensity .≈ 0) .|> b -> !b;
     model.fluidVelocity[fluidIndices] = model.momentumDensity[fluidIndices] ./ model.massDensity[fluidIndices]
 end
@@ -67,40 +67,64 @@ end
 
 function collisionStep(model::LBMmodel)
     # the equilibrium distributions are found
-    equilibriumDistributions = [equilibriumDistribution(id, model) for id in eachindex(model.velocities)]
+    equilibriumDistributions = fill([], size(model.velocities)) |> Vector{Array}
+    Threads.@threads for id in eachindex(model.velocities)
+        equilibriumDistributions[id] = equilibriumDistribution(id, model)
+    end
 
+    Omega = fill([], size(model.velocities)) |> Vector{Array}
     if :bgk in model.schemes
         # the Bhatnagar-Gross-Krook collision opeartor is used
-        Omega = [-model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions[id] - equilibriumDistributions[id]) for id in eachindex(model.velocities)]
+        Threads.@threads for id in eachindex(model.velocities)
+            Omega[id] = -model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions[id] - equilibriumDistributions[id])
+        end
     elseif :trt in model.schemes
-        # the collision opeartor is used
-        distributionsPlus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
-        distributionsMinus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
-        equilibriumDistributionsPlus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
-        equilibriumDistributionsMinus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
-        for id in eachindex(model.velocities)
-            conjugateId = model.boundaryConditionsParams.oppositeVectorId[id]
-            if distributionsPlus[id] == []
-                M = model.distributions[id] + model.distributions[conjugateId] |> M -> M/2
-                distributionsPlus[id] = M
-                distributionsPlus[conjugateId] = M
+        # the two-relaxation-time collision opeartor is used
+        distributionsPlus = fill([], size(model.velocities)) |> Vector{Array{Float64}}
+        distributionsMinus = copy(distributionsPlus)
+        equilibriumDistributionsPlus = copy(distributionsPlus)
+        equilibriumDistributionsMinus = copy(distributionsPlus)
+        if Threads.nthreads() > 1
+            Threads.@threads for id in eachindex(model.velocities)
+                conjugateId = model.boundaryConditionsParams.oppositeVectorId[id]
 
-                M = model.distributions[id] - model.distributions[conjugateId] |> M -> M/2
-                distributionsMinus[id] = M
-                distributionsMinus[conjugateId] = -M
+                distributionsPlus[id] = model.distributions[id] + model.distributions[conjugateId] |> M -> M/2
+                distributionsMinus[id] = model.distributions[id] - model.distributions[conjugateId] |> M -> M/2
 
-                M = equilibriumDistributions[id] + equilibriumDistributions[conjugateId] |> M -> M/2
-                equilibriumDistributionsPlus[id] = M
-                equilibriumDistributionsPlus[conjugateId] = M
+                equilibriumDistributionsPlus[id] = equilibriumDistributions[id] + equilibriumDistributions[conjugateId] |> M -> M/2
+                equilibriumDistributionsMinus[id] = equilibriumDistributions[id] - equilibriumDistributions[conjugateId] |> M -> M/2
+            end
+        else
+            # when run serialized, it is quicker to avoid redundant calculations
+            for id in eachindex(model.velocities)
+                conjugateId = model.boundaryConditionsParams.oppositeVectorId[id]
+                if distributionsPlus[id] == []
+                    M = model.distributions[id] + model.distributions[conjugateId] |> M -> M/2
+                    distributionsPlus[id] = M
+                    distributionsPlus[conjugateId] = M
 
-                M = equilibriumDistributions[id] - equilibriumDistributions[conjugateId] |> M -> M/2
-                equilibriumDistributionsMinus[id] = M
-                equilibriumDistributionsMinus[conjugateId] = -M
+                    M = model.distributions[id] - model.distributions[conjugateId] |> M -> M/2
+                    distributionsMinus[id] = M
+                    distributionsMinus[conjugateId] = -M
+
+                    M = equilibriumDistributions[id] + equilibriumDistributions[conjugateId] |> M -> M/2
+                    equilibriumDistributionsPlus[id] = M
+                    equilibriumDistributionsPlus[conjugateId] = M
+
+                    M = equilibriumDistributions[id] - equilibriumDistributions[conjugateId] |> M -> M/2
+                    equilibriumDistributionsMinus[id] = M
+                    equilibriumDistributionsMinus[conjugateId] = -M
+                end
             end
         end
-        OmegaPlus = [-model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus[id] - equilibriumDistributionsPlus[id]) for id in eachindex(model.velocities)]
-        OmegaMinus = [-model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus[id] - equilibriumDistributionsMinus[id]) for id in eachindex(model.velocities)]
-        Omega = [OmegaPlus[id] + OmegaMinus[id] for id in eachindex(model.velocities)]
+
+        OmegaPlus = fill([], size(model.velocities)) |> Vector{Array}
+        OmegaMinus = fill([], size(model.velocities)) |> Vector{Array}
+        Threads.@threads for id in eachindex(model.velocities)
+            OmegaPlus[id] = -model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus[id] - equilibriumDistributionsPlus[id])
+            OmegaMinus[id] = -model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus[id] - equilibriumDistributionsMinus[id])
+            Omega[id] = OmegaPlus[id] + OmegaMinus[id]
+        end
     end
 
     if :psm in model.schemes
@@ -177,10 +201,16 @@ function collisionStep(model::LBMmodel)
     end
     # forcing terms are added
     if :guo in model.schemes
-        Omega = [Omega[id] + guoForcingTerm(id, model) for id in eachindex(model.velocities)]
+        Threads.@threads for id in eachindex(model.velocities)
+            Omega[id] = Omega[id] + guoForcingTerm(id, model)
+        end
     end
 
-    return [model.distributions[id] + Omega[id] for id in eachindex(model.velocities)] 
+    output = Omega # I know it's useless
+    Threads.@threads for id in eachindex(model.velocities)
+        output[id] += model.distributions[id]
+    end
+    return output
 end
 
 function guoForcingTerm(id::Int64, model::LBMmodel)
@@ -344,14 +374,17 @@ time evolution
 ========================================================================================== =#
 
 function tick!(model::LBMmodel)
+
+
     # collision (or relaxation)
     collisionedDistributions = collisionStep(model)
 
     # propagated distributions will be saved in a new vector
-    propagatedDistributions = [] |> LBMdistributions ;
+    #= propagatedDistributions = [] |> LBMdistributions ; =#
+    propagatedDistributions = fill([], length(model.velocities)) |> LBMdistributions
 
     # streaming (or propagation), with streaming invasion exchange
-    for id in eachindex(model.velocities)
+    Threads.@threads for id in eachindex(model.velocities)
         # distributions are initially streamed
         streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c)
 
@@ -411,10 +444,11 @@ function tick!(model::LBMmodel)
         end
 
         # the resulting propagation is appended to the propagated distributions
-        append!(propagatedDistributions, [streamedDistribution]);
+        #= append!(propagatedDistributions, [streamedDistribution]); =#
+        propagatedDistributions[id] = streamedDistribution
     end
 
-    # the new distributions and time are appended
+    # the distributions and time are updated
     model.distributions = propagatedDistributions
     model.time += model.spaceTime.Δt
     model.tick += 1
@@ -429,6 +463,9 @@ function tick!(model::LBMmodel)
 end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = 10)
+
+    println("Thrads = $(Threads.nthreads())")
+
     if simulationTime != :default && ticks != :default
         error("simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!")
     elseif simulationTime == :default && ticks == :default
@@ -452,6 +489,8 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     hydroVariablesUpdate!(model);
     :saveData in model.schemes && writeTrajectories(model)
+
+    return nothing
 end
 
 #= ==========================================================================================

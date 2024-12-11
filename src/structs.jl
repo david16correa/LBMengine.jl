@@ -46,10 +46,11 @@ mutable struct LBMmodel
         :trt (collision model, stable),
         :bounceBack (boundary conditions, stable),
         :movingWalls (boundary conditions, stable),
+        :cbc (boundary conditions, unstable),
         :guo (forcing, stable),
         :shan (forcing, unstable),
         :ladd (rigid moving particles, stable)
-        :psm (rigid moving particles, stable)
+        :psm (rigid moving particles, unstable)
         :saveData (stable)
     =#
 end

@@ -145,7 +145,7 @@ function modelInit(;
 
     if y == :default 
         if ylims == :default
-            ylims = (0, 1)
+            ylims = xlims
         end
     else
         ylims = (minimum(y), maximum(y))
@@ -154,7 +154,7 @@ function modelInit(;
 
     if z == :default 
         if zlims == :default
-            zlims = (0, 1)
+            zlims = xlims
         end
     else
         zlims = (minimum(z), maximum(z))
