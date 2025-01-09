@@ -4,6 +4,6 @@
 
 A Lattice Boltzmann Method engine for simulation of spherical microswimmers.
 
-Some examples can be found in [LBM-benchmarks](https://github.com/david16correa/LBM-benchmarks). Some of the systems included are shown below.
+For examples, see [LBM-benchmarks](https://github.com/david16correa/LBM-benchmarks). Some of the systems included are shown below.
 
  ![winterMeeting](https://github.com/david16correa/LBM-experiments/blob/main/assets/winterMeetingSummary2.png) 
