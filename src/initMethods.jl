@@ -12,7 +12,7 @@ function addBead!(model::LBMmodel;
     angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
     coupleTorques = false,
     coupleForces = true,
-    scheme = :default # default: psm (partially saturated method)
+    scheme = :default # default: ladd
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
     beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2
@@ -42,7 +42,7 @@ function addBead!(model::LBMmodel;
     # a new bead is defined and added to the model
     newBead = LBMparticle(
         length(model.particles) + 1,
-        (;inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), symmetries = [:spherical], coupleTorques, coupleForces),
+        (;radius, inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), properties = [:spherical, :bead], coupleTorques, coupleForces),
         (; solidRegion = [], streamingInvasionRegions = []),
         position,
         velocity,
@@ -54,11 +54,115 @@ function addBead!(model::LBMmodel;
     append!(model.particles, [newBead]);
 
     # the schemes of the model are managed
-    scheme == :default && (scheme = :psm)
+    scheme == :default && (scheme = :ladd)
     @assert (scheme == :psm || scheme == :ladd) "$(scheme) cannot be used as a particle-fluid collision scheme!"
 
     @assert (newBead.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used"
 
+    append!(model.schemes, [scheme])
+    model.schemes = model.schemes |> unique
+    if !(:bounceBack in model.schemes)
+        wallRegion = [false for _ in model.massDensity] |> sparse
+        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
+        model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
+        scheme == :ladd && (append!(model.schemes, [:bounceBack]))
+    end
+
+    moveParticles!(length(model.particles), model; initialSetup = true)
+
+    # saving data
+    :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
+end
+
+function addSquirmer!(model::LBMmodel;
+    massDensity = 0.1,
+    radius = 0.1,
+    position = :default, # default: origin (actual value is dimensionality dependent)
+    velocity = :default, # default: static (actual value is dimensionality dependent)
+    slipSpeed = :default, # default: 1e-3
+    swimmingDirection = :default, # default: x-direction
+    B1 = :default, # default: 1/normFactor (the normFactor is used to control the maximum slip speed)
+    B2 = :default, # default: 0
+    beta = :default, # default: B2/B1 = 0
+    coupleTorques = false,
+    coupleForces = false,
+    scheme = :default # default: ladd
+)
+    # a local function for the general geometry of a centered bead (sphere) is defined
+    beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2
+
+    # the mass is found using the mass density
+    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.latticeParameter^model.spaceTime.dims
+
+    # position and velocity are defined if necessary
+    position == :default && (position = fill(0., model.spaceTime.dims))
+    velocity == :default && (velocity = fill(0., model.spaceTime.dims))
+    # the dimensions are checked
+    ((length(position) != length(velocity)) || (length(position) != model.spaceTime.dims)) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
+
+    # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
+    if model.spaceTime.dims == 2
+        momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
+        angularMomentumInput = 0.
+    elseif model.spaceTime.dims == 3
+        momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
+        angularMomentumInput = [0., 0, 0]
+    else
+        error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
+    end
+
+    # B1 and B2 are chosen
+    @assert any(x -> x != :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
+    @assert all(x -> x == :default || x isa Number, [B1, B2, beta]) "B1, B2, and beta can only be numbers!"
+
+    if beta == :default
+        B1 == :default && (B1 = 1);
+        B2 == :default && (B2 = 0);
+    else
+        if B2 == :default
+            B1 == :default && (B1 = 1);
+            B2 = B1*beta
+        else
+            @assert beta != 0 "if beta = 0, then B2 can only be zero! In this case, do not declare both."
+            B1 = B2/beta
+        end
+    end
+
+    # the bulk speed is normalized
+    normFactor = [bulkVelocity(B1, B2, theta) for theta in range(-pi, stop=pi, length=100)] |> maximum
+    B1 /= normFactor
+    B2 /= normFactor
+
+    # direction and slip speed are sorted out
+    slipSpeed == :default && (slipSpeed = 1e-3);
+    if swimmingDirection == :default
+        swimmingDirection = fill(0., model.spaceTime.dims)
+        swimmingDirection[1] = 1;
+    end
+    # the swimming direction is normalized
+    swimmingDirection = swimmingDirection |> v -> v/norm(v)
+
+    @assert slipSpeed isa Number "slip speed must be a number!"
+    @assert length(swimmingDirection) == model.spaceTime.dims  "the swimming direction must be $(dims)-dimensional!"
+
+    # a new squirmer is defined and added to the model
+    newSquirmer = LBMparticle(
+        length(model.particles) + 1,
+        (;radius, B1, B2, slipSpeed, swimmingDirection, inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), properties = [:spherical, :squirmer], coupleTorques, coupleForces),
+        (; solidRegion = [], streamingInvasionRegions = []),
+        position,
+        velocity,
+        0.,
+        [],
+        [0. for _ in 1:model.spaceTime.dims],
+        angularMomentumInput,
+    )
+    append!(model.particles, [newSquirmer]);
+
+    # the schemes of the model are managed
+    scheme == :default && (scheme = :ladd)
+    @assert (scheme == :psm || scheme == :ladd) "$(scheme) cannot be used as a particle-fluid collision scheme!"
+    @assert (newSquirmer.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used"
     append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)

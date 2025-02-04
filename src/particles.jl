@@ -11,11 +11,35 @@ function eulerStep!(id::Int64, model::LBMmodel)
     particle.position += model.spaceTime.Δt * particle.velocity
 
     # if the particle has spherical symmetry, then we're done
-    :spherical in particle.particleParams.symmetries && (return nothing)
+    :spherical in particle.particleParams.properties && (return nothing)
 
     # rotations must be added if non spherical objects are implemetned!!
     @warn "Methods for non-spherical objects have not yet been implemetned! Particles will not rotate!"
 end
+
+function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
+    xMinusR = X - particle.position
+    xMinusR_norm = xMinusR |> norm
+
+    (abs(xMinusR_norm - particle.particleParams.radius) > model.spaceTime.latticeParameter) && return zero(particle.position)
+
+    :bead in particle.particleParams.properties && (return particle.velocity + cross(particle.angularVelocity, xMinusR))
+
+    @assert :squirmer in particle.particleParams.properties "As of right now, only beads and squirmers are supported."
+
+    # fancyR := (x - R)/|x - R|, following Griffiths electrodynamics. This helps me read.
+    fancyR = xMinusR/xMinusR_norm
+
+    e_dot_fancyR = dot(particle.particleParams.swimmingDirection, fancyR);
+
+    firstTerm = particle.particleParams.B1 + particle.particleParams.B2 * e_dot_fancyR
+    secondTerm = e_dot_fancyR * fancyR - particle.particleParams.swimmingDirection
+
+    return particle.particleParams.slipSpeed * firstTerm * secondTerm
+end
+
+# this method outputs the speed; I know this is questionable, but it shall only be used when setting up the squirmer
+bulkVelocity(B1::Number, B2::Number, theta::Number) = abs((B1 + B2 * cos(theta)) * sin(theta))
 
 function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     # the particle is named locally for readibility
@@ -64,7 +88,7 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     if nodeVelocityMustBeFound
         particle.nodeVelocity = [[0. for _ in 1:model.spaceTime.dims] for _ in particle.boundaryConditionsParams.solidRegion]
         particle.nodeVelocity[particle.boundaryConditionsParams.solidRegion] = [
-            particle.velocity + cross(particle.angularVelocity, model.spaceTime.X[id] - particle.position) 
+            bulkVelocity(model, particle, model.spaceTime.X[id])
         for id in findall(particle.boundaryConditionsParams.solidRegion)]
     end
 end

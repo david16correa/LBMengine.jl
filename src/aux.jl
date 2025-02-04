@@ -322,7 +322,7 @@ function plotFluidVelocity(model::LBMmodel;
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldY];
     vec = [fluidVelocity[i,j] for i ∈ eachindex(model.spaceTime.coordinates[1])[indices_x] for j ∈ eachindex(model.spaceTime.coordinates[2])[indices_y]];
     vec = 0.07 .* vec ./ maximumFluidSpeed;
-    nonZeroVec = (vec .|> norm) .> 0.007
+    nonZeroVec = (vec .|> norm) .> 0.0007
     arrows!(fig[1,1], pos[nonZeroVec], vec[nonZeroVec],
         arrowsize = 10,
         align = :center

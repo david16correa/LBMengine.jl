@@ -374,8 +374,6 @@ time evolution
 ========================================================================================== =#
 
 function tick!(model::LBMmodel)
-
-
     # collision (or relaxation)
     collisionedDistributions = collisionStep(model)
 

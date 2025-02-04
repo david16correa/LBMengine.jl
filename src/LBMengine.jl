@@ -17,7 +17,7 @@ module LBMengine
     export plotFluidVelocity, plotMomentumDensity, plotMassDensity
 
     # main methods - initialization
-    export modelInit, addBead!
+    export modelInit, addBead!, addSquirmer!
     # main methods - dynamics
     export hydroVariablesUpdate!, LBMpropagate!
 
