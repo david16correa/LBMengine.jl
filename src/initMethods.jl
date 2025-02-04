@@ -129,7 +129,7 @@ function addSquirmer!(model::LBMmodel;
     end
 
     # the bulk speed is normalized
-    normFactor = [bulkVelocity(B1, B2, theta) for theta in range(-pi, stop=pi, length=100)] |> maximum
+    normFactor = [abs((B1 + B2 * cos(theta)) * sin(theta)) for theta in range(-pi, stop=pi, length=100)] |> maximum
     B1 /= normFactor
     B2 /= normFactor
 

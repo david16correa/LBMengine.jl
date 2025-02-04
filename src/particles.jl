@@ -38,9 +38,6 @@ function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
     return particle.particleParams.slipSpeed * firstTerm * secondTerm
 end
 
-# this method outputs the speed; I know this is questionable, but it shall only be used when setting up the squirmer
-bulkVelocity(B1::Number, B2::Number, theta::Number) = abs((B1 + B2 * cos(theta)) * sin(theta))
-
 function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     # the particle is named locally for readibility
     particle = model.particles[id]
