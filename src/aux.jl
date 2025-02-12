@@ -240,6 +240,8 @@ function writeTensor(model::LBMmodel, T::Array, name::String)
     ) # vector of vectors constructor
 
     CSV.write("output.lbm/$name.csv", [metadataDf tensorDf])
+
+    return nothing
 end
 
 #= ==========================================================================================

@@ -34,6 +34,8 @@ function hydroVariablesUpdate!(model::LBMmodel; useEquilibriumScheme = false)
     model.fluidVelocity = fill([0.; 0], size(model.massDensity))
     fluidIndices = (model.massDensity .≈ 0) .|> b -> !b;
     model.fluidVelocity[fluidIndices] = model.momentumDensity[fluidIndices] ./ model.massDensity[fluidIndices]
+
+    return nothing
 end
 
 #= ==========================================================================================
@@ -508,4 +510,6 @@ function viscousStressTensor(model)
     return [
         -coeff * sum(model.velocities[id].c[alpha] * model.velocities[id].c[beta] * nonEquilibriumDistributions[id] for id in eachindex(model.velocities))
     for alpha in 1:model.spaceTime.dims, beta in 1:model.spaceTime.dims]
+
+    return nothing
 end

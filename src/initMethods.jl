@@ -72,6 +72,8 @@ function addBead!(model::LBMmodel;
 
     # saving data
     :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
+
+    return nothing
 end
 
 function addSquirmer!(model::LBMmodel;
@@ -128,27 +130,35 @@ function addSquirmer!(model::LBMmodel;
         end
     end
 
-    # the bulk speed is normalized
-    normFactor = [abs((B1 + B2 * cos(theta)) * sin(theta)) for theta in range(-pi, stop=pi, length=100)] |> maximum
-    B1 /= normFactor
-    B2 /= normFactor
-
-    # direction and slip speed are sorted out
-    slipSpeed == :default && (slipSpeed = 1e-3);
+    # the swimming direction is worked out
     if swimmingDirection == :default
-        swimmingDirection = fill(0., model.spaceTime.dims)
+        swimmingDirection = fill(0., model.spaceTime.dims);
         swimmingDirection[1] = 1;
     end
+    @assert length(swimmingDirection) == model.spaceTime.dims  "the swimming direction must be $(dims)-dimensional!"
     # the swimming direction is normalized
     swimmingDirection = swimmingDirection |> v -> v/norm(v)
 
+    # B1 and B2 are rescaled to ensure the prescribed slip speed is satisfied
+    slipSpeed == :default && (slipSpeed = 1e-3);
     @assert slipSpeed isa Number "slip speed must be a number!"
-    @assert length(swimmingDirection) == model.spaceTime.dims  "the swimming direction must be $(dims)-dimensional!"
+    normFactor = [abs((B1 + B2 * cos(theta)) * sin(theta)) for theta in range(-pi, stop=pi, length=100)] |> maximum
+    B1 *= slipSpeed/normFactor
+    B2 *= slipSpeed/normFactor
 
     # a new squirmer is defined and added to the model
     newSquirmer = LBMparticle(
         length(model.particles) + 1,
-        (;radius, B1, B2, slipSpeed, swimmingDirection, inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), properties = [:spherical, :squirmer], coupleTorques, coupleForces),
+        (;  radius,
+            B1,
+            B2,
+            swimmingDirection,
+            inverseMass = 1/mass,
+            inverseMomentOfInertia = 1/momentOfInertia,
+            solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2),
+            properties = [:spherical, :squirmer],
+            coupleTorques,
+            coupleForces), # particleParams
         (; solidRegion = [], streamingInvasionRegions = []),
         position,
         velocity,
@@ -176,6 +186,8 @@ function addSquirmer!(model::LBMmodel;
 
     # saving data
     :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
+
+    return nothing
 end
 
 "Initializes f_i to f^eq_i, which is the simplest strategy."
