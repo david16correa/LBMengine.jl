@@ -14,5 +14,5 @@ For examples, see [LBM-benchmarks](https://github.com/david16correa/LBM-benchmar
 
  ![winterMeeting](https://github.com/david16correa/LBM-experiments/blob/main/assets/winterMeetingSummary2.png) 
 
-> [!note] Note:
+> [!NOTE]
 > As of right now, there's no documentation for this project. Although sorting through the examples and the source code will be useful, you're welcome to email me at [david.correa.bsc@gmail.com](mailto:david.correa.bsc@gmail.com) with any questions you might have.
