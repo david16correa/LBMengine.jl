@@ -114,7 +114,7 @@ function addSquirmer!(model::LBMmodel;
     end
 
     # B1 and B2 are chosen
-    @assert any(x -> x != :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
+    @assert any(x -> x == :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
     @assert all(x -> x == :default || x isa Number, [B1, B2, beta]) "B1, B2, and beta can only be numbers!"
 
     if beta == :default
@@ -215,9 +215,6 @@ function modelInit(;
     viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: it's value is taken to be such that the relaxationTime is 0.8Δt
     collisionModel = :default, # {:bgk, :trt}, default: :bgk
     kineticParameter = 0.25, # Λ, for :trt; different choices lead to different stability behaviors! Cf. Krüger p.429
-    x = :default,
-    y = :default,
-    z = :default,
     xlims = :default,
     ylims = :default,
     zlims = :default,
@@ -239,46 +236,33 @@ function modelInit(;
     kwInitialConditions = (; )
     boundaryConditionsParams = (; )
 
+    #= - the lattice parameter, relaxation time ratio, and viscosity are sorted out - =#
+
+    @assert any(x -> x == :default, [latticeParameter, relaxationTimeRatio, viscosity]) "latticeParameter, relaxationTimeRatio, and viscosity cannot be all simultaneously defined!"
+
+    if latticeParameter == :default
+        (relaxationTimeRatio == :default) && (relaxationTimeRatio = 15);
+        (viscosity == :default) && (viscosity = 0.890);
+        latticeParameter = 3*viscosity * inv(relaxationTimeRatio - 0.5)
+    else
+        if relaxationTimeRatio == :default
+            (viscosity == :default) && (viscosity = 0.890);
+            relaxationTimeRatio = 3*viscosity/latticeParameter + 0.5
+        else
+            viscosity = latticeParameter/3 * (relaxationTimeRatio - 0.5)
+        end
+    end
+
     #= -------------------------- space time is sorted out -------------------------- =#
-    @assert !(x != :default && xlims != :default) "`x` and `xlims` should not be defined simultaneously!"
-    @assert !(y != :default && ylims != :default) "`y` and `ylims` should not be defined simultaneously!"
-    @assert !(z != :default && zlims != :default) "`z` and `zlims` should not be defined simultaneously!"
-    @assert !((x != :default || y != :default || z != :default) && latticeParameter != :default) "The coordinates and the lattice paramter  should not be defined simultaneously!"
-    [x,y,z][findall(x -> x isa AbstractRange, [x,y,z])] .|> step |> v -> all(x -> x == first(v), v) |> areAllStepsEqual -> @assert areAllStepsEqual "The step of all coordinates should be the same!"
+    (xlims == :default) && (xlims = (0,1));
+    (ylims == :default) && (ylims = xlims);
+    (zlims == :default) && (zlims = xlims);
 
-    if x == :default
-        if xlims == :default
-            xlims = (0, 1)
-        end
-        if latticeParameter == :default
-            latticeParameter = 0.01
-        end
-    else
-        xlims = (minimum(x), maximum(x))
-        latticeParameter = step(x)
-    end
     x = range(xlims[1], stop = xlims[2], step = latticeParameter)
-
-    if y == :default 
-        if ylims == :default
-            ylims = xlims
-        end
-    else
-        ylims = (minimum(y), maximum(y))
-    end
     y = range(ylims[1], stop = ylims[2], step = latticeParameter)
-
-    if z == :default 
-        if zlims == :default
-            zlims = xlims
-        end
-    else
-        zlims = (minimum(z), maximum(z))
-    end
     z = range(zlims[1], stop = zlims[2], step = latticeParameter)
 
-    coordinates = [x,y,z][1:dims]
-
+    coordinates, expectedSizes = [x,y,z][1:dims] |> v -> (v, length.(v))
 
     #= -------------------------- hydrodynamic variables -------------------------- =#
     # if default conditions were chosen, ρ is built. Otherwise its dimensions are verified
@@ -287,11 +271,8 @@ function modelInit(;
     elseif massDensity isa Number
         massDensity = [length(coordinates[id]) for id in 1:dims] |> v -> massDensity * ones(v...)
     else
-        @assert (size(massDensity) |> sizeM -> all(x -> x == sizeM[1], sizeM)) "All dimensions must have the same length! size(ρ) = $(sizeM)"
+        @assert all(id -> size(massDensity)[id]==expectedSizes[id], eachindex(expectedSizes)) "The mass density given has the wrong size! $(expectedSizes) expected."
     end
-
-    # # the side length is stored
-    # N = size(massDensity) |> sizeM -> sizeM[1];
 
     # if default conditions were chosen, u is built. Otherwise its dimensions are verified
     if fluidVelocity == :default
@@ -299,7 +280,7 @@ function modelInit(;
     elseif size(fluidVelocity) |> length == 1
         fluidVelocity = [fluidVelocity |> Array{Float64} for _ in massDensity];
     else
-        @assert (size(fluidVelocity) |> sizeU -> all(x -> x == sizeU[1], sizeU)) "All dimensions must have the same length! size(u) = $(sizeU)"
+        @assert all(id -> size(fluidVelocity)[id]==expectedSizes[id], eachindex(expectedSizes)) "The fluid velocity given has the wrong size! $(expectedSizes) expected."
     end
 
     #= ------------------------ choosing the velocity set ----------------------- =#
@@ -315,11 +296,10 @@ function modelInit(;
     end
 
     #= ---------------- space and time variables are initialized ---------------- =#
-    Δx = latticeParameter
     # by default Δt = Δx, as this is the most stable
-    (Δt == :default) ? (Δt = Δx) : nothing
-    # size Δx/Δt is often used, its value is stored to avoid redundant calculations
-    Δx_Δt = Δx/Δt |> Float64
+    (Δt == :default) && (Δt = latticeParameter);
+    # since Δx/Δt is often used, its value is stored to avoid redundant calculations
+    Δx_Δt = latticeParameter/Δt |> Float64
     X = [[coordinates[id][Id[id]] for id in Id |> Tuple |> eachindex]  for Id in eachindex(IndexCartesian(), massDensity)]
     spaceTime = (; coordinates, X, latticeParameter, Δt, Δx_Δt, dims); 
     tick, time = 0, 0.;
@@ -327,16 +307,7 @@ function modelInit(;
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
     collisionModel == :default && (collisionModel = :trt)
-    @assert !((viscosity != :default) && (relaxationTimeRatio != :default)) "The viscosity and the relaxationTimeRatio should not be defined simultaneously!"
-
-    relaxationTimeRatio == :default && (relaxationTimeRatio = 0.8)
-
-    if viscosity == :default
-        relaxationTime = relaxationTimeRatio * Δt
-        viscosity = c2_s * (relaxationTime - Δt/2)
-    else
-        relaxationTime = viscosity/c2_s + Δt/2
-    end
+    relaxationTime = relaxationTimeRatio * Δt;
 
     @assert (collisionModel == :bgk || collisionModel == :trt) "Collision model $collisionModel is not implemented!"
 
@@ -419,7 +390,7 @@ function modelInit(;
             fluidVelocity,
             Δx_Δt;
             kwInitialConditions = kwInitialConditions
-        ) 
+        )
     for id in eachindex(velocities)]
 
     #= ---------------------------------- saving data setup ---------------------------------- =#
@@ -442,7 +413,7 @@ function modelInit(;
         initialDistributions, # f_i(x, t) for all t
         velocities, # c_i for all i
         boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
-        []|>Vector{LBMparticle},
+        []|>Vector{LBMparticle}, # initially there will be no particles
         unique(schemes)
     );
 

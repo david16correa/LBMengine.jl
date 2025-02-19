@@ -462,13 +462,12 @@ function tick!(model::LBMmodel)
     (:ladd in model.schemes || :psm in model.schemes) && (moveParticles!(model));
 end
 
-function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = 10)
+function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = :default, ticksSaved = :default)
 
     println("Thrads = $(Threads.nthreads())")
 
-    if simulationTime != :default && ticks != :default
-        error("simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!")
-    elseif simulationTime == :default && ticks == :default
+    @assert any(x -> x == :default, [simulationTime, ticks]) "simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!"
+    if simulationTime == :default && ticks == :default
         time = range(model.spaceTime.Δt, length = 100, step = model.spaceTime.Δt);
     elseif ticks == :default
         time = range(model.spaceTime.Δt, stop = simulationTime::Number, step = model.spaceTime.Δt);
@@ -476,9 +475,13 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
         time = range(model.spaceTime.Δt, length = ticks::Int64, step = model.spaceTime.Δt);
     end
 
+    @assert any(x -> x == :default, [ticksBetweenSaves, ticksSaved]) "ticksBetweenSaves, and ticksSaved cannot be both simultaneously defined!"
+    (ticksSaved == :default) && (ticksSaved = 100);
+    (ticksBetweenSaves == :default) && (ticksBetweenSaves = simulationTime / model.spaceTime.latticeParameter / ticksSaved |> round |> Int64); # this may not be exact
+
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
 
-    :saveData in model.schemes && mkOutputDirs()
+    (:saveData in model.schemes) && (mkOutputDirs());
 
     for t in time |> eachindex
         tick!(model);

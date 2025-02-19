@@ -21,11 +21,11 @@ function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
     xMinusR = X - particle.position
     xMinusR_norm = xMinusR |> norm
 
-    (abs(xMinusR_norm - particle.particleParams.radius) > model.spaceTime.latticeParameter) && return zero(particle.position)
+    :ladd in model.schemes && (abs(xMinusR_norm - particle.particleParams.radius) > model.spaceTime.latticeParameter) && return zero(particle.position)
 
     bulkV = particle.velocity + cross(particle.angularVelocity, xMinusR)
 
-    :bead in particle.particleParams.properties && (return bulkV)
+    (:bead in particle.particleParams.properties || xMinusR_norm == 0) && (return bulkV)
 
     @assert :squirmer in particle.particleParams.properties "As of right now, only beads and squirmers are supported."
 
@@ -37,6 +37,7 @@ function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
     firstTerm = particle.particleParams.B1 + particle.particleParams.B2 * e_dot_fancyR
     secondTerm = e_dot_fancyR * fancyR - particle.particleParams.swimmingDirection
 
+    #= return (firstTerm * secondTerm) * xMinusR_norm / particle.particleParams.radius + bulkV =#
     return firstTerm * secondTerm + bulkV
 end
 
