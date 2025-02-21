@@ -5,13 +5,13 @@ init methods
 ========================================================================================== =#
 
 function addBead!(model::LBMmodel;
-    massDensity = 0.1,
+    massDensity = 1.0,
     radius = 0.1,
     position = :default, # default: origin (actual value is dimensionality dependent)
     velocity = :default, # default: static (actual value is dimensionality dependent)
     angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
     coupleTorques = false,
-    coupleForces = true,
+    coupleForces = false,
     scheme = :default # default: ladd
 )
     # a local function for the general geometry of a centered bead (sphere) is defined
@@ -237,13 +237,12 @@ function modelInit(;
     boundaryConditionsParams = (; )
 
     #= - the lattice parameter, relaxation time ratio, and viscosity are sorted out - =#
-
     @assert any(x -> x == :default, [latticeParameter, relaxationTimeRatio, viscosity]) "latticeParameter, relaxationTimeRatio, and viscosity cannot be all simultaneously defined!"
 
     if latticeParameter == :default
         (relaxationTimeRatio == :default) && (relaxationTimeRatio = 15);
         (viscosity == :default) && (viscosity = 0.890);
-        latticeParameter = 3*viscosity * inv(relaxationTimeRatio - 0.5)
+        latticeParameter = 3*viscosity/(relaxationTimeRatio - 0.5)
     else
         if relaxationTimeRatio == :default
             (viscosity == :default) && (viscosity = 0.890);
@@ -257,6 +256,8 @@ function modelInit(;
     (xlims == :default) && (xlims = (0,1));
     (ylims == :default) && (ylims = xlims);
     (zlims == :default) && (zlims = xlims);
+
+    @assert all(t -> t[2]!=t[1], [xlims, ylims, zlims]) "Coordinate lower and upper limits cannot be equal! Current limits are $([xlims, ylims, zlims][1:dims])"
 
     x = range(xlims[1], stop = xlims[2], step = latticeParameter)
     y = range(ylims[1], stop = ylims[2], step = latticeParameter)
@@ -423,8 +424,8 @@ function modelInit(;
     # if either ρ or u changed, the user is notified
     acceptableError = 0.01;
     fluidRegion = wallRegion .|> b -> !b;
-    error_massDensity = (model.massDensity[fluidRegion] - massDensity[fluidRegion] .|> abs)  |> maximum
-    error_fluidVelocity = (model.fluidVelocity[fluidRegion] - fluidVelocity[fluidRegion] .|> norm) |> maximum
+    error_massDensity = model.massDensity[fluidRegion] - massDensity[fluidRegion] |> M -> abs.(M) |> maximum
+    error_fluidVelocity = model.fluidVelocity[fluidRegion] - fluidVelocity[fluidRegion] |> M -> norm.(M) |> maximum
     if (error_massDensity > acceptableError) || (error_fluidVelocity > acceptableError)
         @warn "the initial conditions for ρ and u could not be met. New ones were defined."
     end

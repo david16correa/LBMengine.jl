@@ -263,7 +263,7 @@ function save_jpg(name::String, fig::Figure)
     nameJPG = name*".jpg"
     save(".output.png", fig)
     if Sys.islinux()
-        run(`convert .output.png $nameJPG`)
+        run(`magick .output.png $nameJPG`)
         run(`rm .output.png`);
     elseif Sys.isapple()
         run(`magick .output.png $nameJPG`)
@@ -335,6 +335,7 @@ function plotFluidVelocity(model::LBMmodel;
     if saveFig
         mkFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
+        return nothing
     else
         return fig, ax
     end
@@ -394,6 +395,7 @@ function plotMomentumDensity(model::LBMmodel;
     if saveFig
         mkFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
+        return nothing
     else
         return fig, ax
     end
@@ -449,6 +451,7 @@ function plotMassDensity(model::LBMmodel;
     if saveFig
         mkFigDirs()
         save_jpg("figs/$(today())/LBM figure $(Time(now()))", fig)
+        return nothing
     else
         return fig, ax
     end
