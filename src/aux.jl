@@ -266,7 +266,7 @@ function save_jpg(name::String, fig::Figure)
         run(`magick .output.png $nameJPG`)
         run(`rm .output.png`);
     elseif Sys.isapple()
-        run(`magick .output.png $nameJPG`)
+        run(`convert .output.png $nameJPG`)
         run(`rm .output.png`);
     elseif Sys.iswindows()
         namePNG = name*".png"
