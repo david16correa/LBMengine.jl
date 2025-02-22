@@ -146,8 +146,8 @@ function collisionStep(model::LBMmodel)
                     for id in eachindex(model.velocities)[2:end]
                         ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                         sumTerm = B .* OmegaS[id]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm[E]) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
+                        particle.particleParams.coupleForces && (particle.momentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm[E]) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
                         ))
                     end
@@ -192,8 +192,8 @@ function collisionStep(model::LBMmodel)
                     for id in eachindex(model.velocities)[2:end]
                         ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                         sumTerm = Omega_solid[id]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm[E]) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
+                        particle.particleParams.coupleForces && (particle.momentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm[E]) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm[E] .* [x - particle.position for x in model.spaceTime.X[E]]), ci
                         ))
                     end
@@ -433,9 +433,10 @@ function tick!(model::LBMmodel)
 
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
-                        sumTerm = collisionedDistributions[conjugateId][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
+                        exteriorBoundaryNodes = conjugateBoundaryNodes .&& particle.boundaryConditionsParams.exteriorBoundary # only the exterior nodes push the particle
+                        sumTerm = collisionedDistributions[conjugateId][exteriorBoundaryNodes] + streamedDistribution[exteriorBoundaryNodes]
+                        particle.particleParams.coupleForces && (particle.momentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
                         ))
                     end
@@ -475,13 +476,17 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
         time = range(model.spaceTime.Δt, length = ticks::Int64, step = model.spaceTime.Δt);
     end
 
-    @assert any(x -> x == :default, [ticksBetweenSaves, ticksSaved]) "ticksBetweenSaves, and ticksSaved cannot be both simultaneously defined!"
-    (ticksSaved == :default) && (ticksSaved = 100);
-    (ticksBetweenSaves == :default) && (ticksBetweenSaves = simulationTime / model.spaceTime.latticeParameter / ticksSaved |> round |> Int64); # this may not be exact
+    simulationTime = time[end];
+    ticks = length(time);
+
+    if :saveData in model.schemes
+        @assert any(x -> x == :default, [ticksBetweenSaves, ticksSaved]) "ticksBetweenSaves, and ticksSaved cannot be both simultaneously defined!"
+        (ticksSaved == :default) && (ticksSaved = 100);
+        (ticksBetweenSaves == :default) && (ticksBetweenSaves = simulationTime / model.spaceTime.latticeParameter / ticksSaved |> round |> Int64); # this may not be exact
+        mkOutputDirs();
+    end
 
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
-
-    (:saveData in model.schemes) && (mkOutputDirs());
 
     for t in time |> eachindex
         tick!(model);

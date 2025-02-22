@@ -22,8 +22,8 @@ mutable struct LBMparticle
     velocity::Vector{Float64}
     angularVelocity::Union{Float64, Vector{Float64}}
     nodeVelocity::Array{Vector{Float64}}
-    momentumInput::Vector{Float64}
-    angularMomentumInput::Union{Float64, Vector{Float64}}
+    momentumInput::Vector
+    angularMomentumInput::Union{Float64, Vector}
 end
 
 mutable struct LBMmodel

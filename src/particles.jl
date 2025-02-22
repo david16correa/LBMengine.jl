@@ -50,17 +50,19 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
     # the velocity and angular velocity are updated, and the particle is moved (this is not necessary in the initial setup)
     if !initialSetup
-        particle.velocity += particle.particleParams.inverseMass * particle.momentumInput
-        particle.angularVelocity += particle.particleParams.inverseMomentOfInertia * particle.angularMomentumInput
+        deltaP = particle.momentumInput |> sum
+        deltaL = particle.angularMomentumInput |> sum
+        particle.velocity += particle.particleParams.inverseMass * deltaP
+        particle.angularVelocity += particle.particleParams.inverseMomentOfInertia * deltaL
         # the particle will be moved only if the velocity is nonzero! (there are no methods for rotating particles)
         (particle.velocity |> v -> v != zero(v)) && (eulerStep!(id, model); particleMoved = true)
         # the node velocity needs to be found if a) the angular velocity changed, or b) the particle moved
-        ((particle.angularMomentumInput |> v -> v != zero(v)) || particleMoved) && (nodeVelocityMustBeFound = true)
+        ((deltaL |> v -> v != zero(v)) || particleMoved) && (nodeVelocityMustBeFound = true)
     end
 
     # the inputs are reset
-    particle.momentumInput = particle.momentumInput |> zero
-    particle.angularMomentumInput = particle.angularMomentumInput |> zero
+    particle.momentumInput = particle.momentumInput .|> zero
+    particle.angularMomentumInput = particle.angularMomentumInput .|> zero
 
     # the projection of the particle onto the lattice is found, along with its boundary nodes (streaming invasion regions)
     if particleMoved
@@ -72,14 +74,15 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
         particle.boundaryConditionsParams = (; solidRegion);
 
         if :ladd in model.schemes
-            # the new streaming invasion regions are found
+            # the new exterior boundary and streaming invasion regions are found
             streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
+            exteriorBoundary = streamingInvasionRegions |> sum .|> sign .|> Bool
             interiorStreamingInvasionRegions = bounceBackPrep(solidRegion .|> b -> !b, model.velocities; returnStreamingInvasionRegions = true)
             for id in eachindex(model.boundaryConditionsParams.oppositeVectorId)
                 streamingInvasionRegions[id] = streamingInvasionRegions[id] .|| interiorStreamingInvasionRegions[id]
             end
             # everything is stored in the original particle
-            particle.boundaryConditionsParams = merge(particle.boundaryConditionsParams, (; streamingInvasionRegions));
+            particle.boundaryConditionsParams = merge(particle.boundaryConditionsParams, (; streamingInvasionRegions, exteriorBoundary));
         end
 
     end

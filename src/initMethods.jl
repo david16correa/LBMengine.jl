@@ -39,6 +39,12 @@ function addBead!(model::LBMmodel;
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
 
+    # the momentum input is defined, and the inputs are turned into vectors to allow for multithreading
+    momentumInput = [0. for _ in 1:model.spaceTime.dims];
+
+    momentumInput = fill(momentumInput, length(model.velocities) + 1)
+    angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
+
     # a new bead is defined and added to the model
     newBead = LBMparticle(
         length(model.particles) + 1,
@@ -48,7 +54,7 @@ function addBead!(model::LBMmodel;
         velocity,
         angularVelocity,
         [],
-        [0. for _ in 1:model.spaceTime.dims],
+        momentumInput,
         angularMomentumInput,
     )
     append!(model.particles, [newBead]);
@@ -77,7 +83,7 @@ function addBead!(model::LBMmodel;
 end
 
 function addSquirmer!(model::LBMmodel;
-    massDensity = 0.1,
+    massDensity = 1.0,
     radius = 0.1,
     position = :default, # default: origin (actual value is dimensionality dependent)
     velocity = :default, # default: static (actual value is dimensionality dependent)
@@ -112,6 +118,12 @@ function addSquirmer!(model::LBMmodel;
     else
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
+
+    # the momentum input is defined, and the inputs are turned into vectors to allow for multithreading
+    momentumInput = [0. for _ in 1:model.spaceTime.dims];
+
+    momentumInput = fill(momentumInput, length(model.velocities) + 1)
+    angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
 
     # B1 and B2 are chosen
     @assert any(x -> x == :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
@@ -164,7 +176,7 @@ function addSquirmer!(model::LBMmodel;
         velocity,
         0.,
         [],
-        [0. for _ in 1:model.spaceTime.dims],
+        momentumInput,
         angularMomentumInput,
     )
     append!(model.particles, [newSquirmer]);
