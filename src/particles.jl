@@ -76,13 +76,7 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
         if :ladd in model.schemes
             # the new exterior boundary and streaming invasion regions are found
             streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
-            exteriorBoundary = streamingInvasionRegions |> sum .|> sign .|> Bool
-            interiorStreamingInvasionRegions = bounceBackPrep(solidRegion .|> b -> !b, model.velocities; returnStreamingInvasionRegions = true)
-            for id in eachindex(model.boundaryConditionsParams.oppositeVectorId)
-                streamingInvasionRegions[id] = streamingInvasionRegions[id] .|| interiorStreamingInvasionRegions[id]
-            end
-            # everything is stored in the original particle
-            particle.boundaryConditionsParams = merge(particle.boundaryConditionsParams, (; streamingInvasionRegions, exteriorBoundary));
+            particle.boundaryConditionsParams = merge(particle.boundaryConditionsParams, (; streamingInvasionRegions));
         end
 
     end
