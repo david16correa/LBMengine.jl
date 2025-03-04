@@ -87,7 +87,8 @@ function addSquirmer!(model::LBMmodel;
     radius = 0.1,
     position = :default, # default: origin (actual value is dimensionality dependent)
     velocity = :default, # default: static (actual value is dimensionality dependent)
-    slipSpeed = :default, # default: 1e-3
+    slipSpeed = :default,
+    swimmingSpeed = :default,
     swimmingDirection = :default, # default: x-direction
     B1 = :default, # default: 1/normFactor (the normFactor is used to control the maximum slip speed)
     B2 = :default, # default: 0
@@ -132,6 +133,7 @@ function addSquirmer!(model::LBMmodel;
     if beta == :default
         B1 == :default && (B1 = 1);
         B2 == :default && (B2 = 0);
+        beta = B2/B1; # beta might be useful later
     else
         if B2 == :default
             B1 == :default && (B1 = 1);
@@ -151,12 +153,19 @@ function addSquirmer!(model::LBMmodel;
     # the swimming direction is normalized
     swimmingDirection = swimmingDirection |> v -> v/norm(v)
 
-    # B1 and B2 are rescaled to ensure the prescribed slip speed is satisfied
-    slipSpeed == :default && (slipSpeed = 1e-3);
-    @assert slipSpeed isa Number "slip speed must be a number!"
-    normFactor = [abs((B1 + B2 * cos(theta)) * sin(theta)) for theta in range(-pi, stop=pi, length=100)] |> maximum
-    B1 *= slipSpeed/normFactor
-    B2 *= slipSpeed/normFactor
+    # B1 and B2 are rescaled to ensure either the slip speed or swimming speed is satisfied
+    @assert any(x -> x == :default, [slipSpeed, swimmingSpeed]) "slipSpeed and swimmingSpeed cannot be all simultaneously defined!"
+    if slipSpeed == :default
+        (swimmingSpeed == :default) && (swimmingSpeed = 1e-3);
+        @assert swimmingSpeed isa Number "swimmingSpeed must be a number!"
+        B1 = 3/2 * swimmingSpeed
+        B2 = B1*beta
+    else
+        @assert slipSpeed isa Number "slip speed must be a number!"
+        normFactor = [abs((B1 + B2 * cos(theta)) * sin(theta)) for theta in range(-pi, stop=pi, length=100)] |> maximum
+        B1 *= slipSpeed/normFactor
+        B2 *= slipSpeed/normFactor
+    end
 
     # a new squirmer is defined and added to the model
     newSquirmer = LBMparticle(

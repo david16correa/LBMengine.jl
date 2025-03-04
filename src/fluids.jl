@@ -380,7 +380,6 @@ function tick!(model::LBMmodel)
     collisionedDistributions = collisionStep(model)
 
     # propagated distributions will be saved in a new vector
-    #= propagatedDistributions = [] |> LBMdistributions ; =#
     propagatedDistributions = fill([], length(model.velocities)) |> LBMdistributions
 
     # streaming (or propagation), with streaming invasion exchange
@@ -444,7 +443,6 @@ function tick!(model::LBMmodel)
         end
 
         # the resulting propagation is appended to the propagated distributions
-        #= append!(propagatedDistributions, [streamedDistribution]); =#
         propagatedDistributions[id] = streamedDistribution
     end
 
@@ -464,7 +462,7 @@ end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = :default, ticksSaved = :default)
 
-    println("Thrads = $(Threads.nthreads())")
+    verbose && (println("Thrads = $(Threads.nthreads())"))
 
     @assert any(x -> x == :default, [simulationTime, ticks]) "simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!"
     if simulationTime == :default && ticks == :default
