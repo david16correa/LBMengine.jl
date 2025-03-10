@@ -69,7 +69,7 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
         # the particle discretisation on the lattice is updated
         solidRegion = [particle.particleParams.solidRegionGenerator(x - particle.position) for x in model.spaceTime.X]
         #= solidRegion != particle.boundaryConditionsParams.solidRegion && println("ups") =#
-        model.spaceTime.dims < 3 && (solidRegion = sparse(solidRegion))
+        model.spaceTime.dims < 3 ? (solidRegion = sparse(solidRegion)) : (solidRegion = BitArray(solidRegion))
 
         particle.boundaryConditionsParams = (; solidRegion);
 
@@ -83,7 +83,7 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
     # the solid velocity (momentum density / mass density) is found
     if nodeVelocityMustBeFound
-        particle.nodeVelocity = [[0. for _ in 1:model.spaceTime.dims] for _ in particle.boundaryConditionsParams.solidRegion]
+        particle.nodeVelocity = fill(fill(0., model.spaceTime.dims), size(particle.boundaryConditionsParams.solidRegion))
         particle.nodeVelocity[particle.boundaryConditionsParams.solidRegion] = [
             bulkVelocity(model, particle, model.spaceTime.X[id])
         for id in findall(particle.boundaryConditionsParams.solidRegion)]

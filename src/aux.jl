@@ -176,38 +176,69 @@ saving data
 ========================================================================================== =#
 
 function writeTrajectories(model::LBMmodel)
-    fluidDf = DataFrame(
-        tick = model.tick,
-        time = model.time,
-        id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-        id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-        coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
-        coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
-        massDensity = model.massDensity |> vec,
-        fluidVelocity_x = [velocity[1] for velocity in model.fluidVelocity] |> vec,
-        fluidVelocity_y = [velocity[2] for velocity in model.fluidVelocity] |> vec
-    ) # keyword argument constructor
+    if model.spaceTime.dims == 2
+        fluidDf = DataFrame(
+            tick = model.tick,
+            time = model.time,
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+            massDensity = model.massDensity |> vec,
+            fluidVelocity_x = [velocity[1] for velocity in model.fluidVelocity] |> vec,
+            fluidVelocity_y = [velocity[2] for velocity in model.fluidVelocity] |> vec
+        ) # keyword argument constructor
+    elseif model.spaceTime.dims == 3
+        fluidDf = DataFrame(
+            tick = model.tick,
+            time = model.time,
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            id_z = [coordinate[3] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+            coordinate_z = [coordinate[3] for coordinate in model.spaceTime.X] |> vec,
+            massDensity = model.massDensity |> vec,
+            fluidVelocity_x = [velocity[1] for velocity in model.fluidVelocity] |> vec,
+            fluidVelocity_y = [velocity[2] for velocity in model.fluidVelocity] |> vec,
+            fluidVelocity_z = [velocity[3] for velocity in model.fluidVelocity] |> vec
+        ) # keyword argument constructor
+    end
     distributionsDf = DataFrame(
         vec.(model.distributions), ["f$(i)" for i in 1:length(model.distributions)]
     ) # vector of vectors constructor
 
     CSV.write("output.lbm/fluidTrj_$(model.tick).csv", [fluidDf distributionsDf])
-
-    # if there are particles in the system, their trajectories are stored as well
-    (:ladd in model.schemes || :psm in model.schemes) && writeParticlesTrajectories(model)
 end
 
 function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel)
-    particleDf = DataFrame(
-        tick = model.tick,
-        time = model.time,
-        particleId = particle.id,
-        position_x = particle.position[1],
-        position_y = particle.position[2],
-        velocity_x = particle.velocity[1],
-        velocity_y = particle.velocity[2],
-        angularVelocity = particle.angularVelocity
-    ) # keyword argument constructor
+    if model.spaceTime.dims == 2
+        particleDf = DataFrame(
+            tick = model.tick,
+            time = model.time,
+            particleId = particle.id,
+            position_x = particle.position[1],
+            position_y = particle.position[2],
+            velocity_x = particle.velocity[1],
+            velocity_y = particle.velocity[2],
+            angularVelocity = particle.angularVelocity
+        )
+    elseif model.spaceTime.dims == 3
+        particleDf = DataFrame(
+            tick = model.tick,
+            time = model.time,
+            particleId = particle.id,
+            position_x = particle.position[1],
+            position_y = particle.position[2],
+            position_z = particle.position[3],
+            velocity_x = particle.velocity[1],
+            velocity_y = particle.velocity[2],
+            velocity_z = particle.velocity[3],
+            angularVelocity_x = particle.angularVelocity[1],
+            angularVelocity_y = particle.angularVelocity[2],
+            angularVelocity_z = particle.angularVelocity[3],
+        )
+    end
 
     if !isfile("output.lbm/particlesTrj.csv")
         CSV.write("output.lbm/particlesTrj.csv", particleDf)
@@ -225,18 +256,33 @@ end
 function writeTensor(model::LBMmodel, T::Array, name::String)
     mkOutputDirs()
 
-    metadataDf = DataFrame(
-        tick = model.tick,
-        time = model.time,
-        id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-        id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-        coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
-        coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
-    ) # keyword argument constructor
+    if model.spaceTime.dims == 2
+        metadataDf = DataFrame(
+            tick = model.tick,
+            time = model.time,
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+        ) # keyword argument constructor
+        componentStrings = ["x", "y"]
+    elseif model.spaceTime.dims == 3
+        metadataDf = DataFrame(
+            tick = model.tick,
+            time = model.time,
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            id_z = [coordinate[3] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+            coordinate_z = [coordinate[3] for coordinate in model.spaceTime.X] |> vec,
+        ) # keyword argument constructor
+        componentStrings = ["x", "y", "z"]
+    end
 
-    component_labels = ["component_xx" "component_xy"; "component_yx" "component_yy"] |> vec
+    componentLabels = ["component_"*i*j for i in componentStrings, j in componentStrings] |> vec
     tensorDf = T |> vec |> v -> DataFrame(
-        vec.(v), component_labels
+        vec.(v), componentLabels
     ) # vector of vectors constructor
 
     CSV.write("output.lbm/$name.csv", [metadataDf tensorDf])

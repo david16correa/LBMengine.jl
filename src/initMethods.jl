@@ -21,8 +21,8 @@ function addBead!(model::LBMmodel;
     mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.latticeParameter^model.spaceTime.dims
 
     # position and velocity are defined if necessary
-    position == :default && (position = [0. for _ in 1:model.spaceTime.dims])
-    velocity == :default && (velocity = [0. for _ in 1:model.spaceTime.dims])
+    position == :default && (position = fill(0., model.spaceTime.dims))
+    velocity == :default && (velocity = fill(0., model.spaceTime.dims))
     # the dimensions are checked
     ((length(position) != length(velocity)) || (length(position) != model.spaceTime.dims)) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
 
@@ -31,16 +31,18 @@ function addBead!(model::LBMmodel;
         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
         angularVelocity == :default && (angularVelocity = 0.)
         angularMomentumInput = 0.
+        @assert (angularVelocity isa Number) "In two dimensions, angularVelocity must be a number!"
     elseif model.spaceTime.dims == 3
         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
         angularVelocity == :default && (angularVelocity = [0., 0, 0])
         angularMomentumInput = [0., 0, 0]
+        @assert (angularVelocity isa Array) "In three dimensions, angularVelocity must be an array!"
     else
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
 
     # the momentum input is defined, and the inputs are turned into vectors to allow for multithreading
-    momentumInput = [0. for _ in 1:model.spaceTime.dims];
+    momentumInput = fill(0., model.spaceTime.dims);
 
     momentumInput = fill(momentumInput, length(model.velocities) + 1)
     angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
@@ -68,7 +70,8 @@ function addBead!(model::LBMmodel;
     append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
-        wallRegion = [false for _ in model.massDensity] |> sparse
+        wallRegion = fill(false, size(model.massDensity))
+        (model.spaceTime.dims <= 2) ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
         scheme == :ladd && (append!(model.schemes, [:bounceBack]))
@@ -121,7 +124,7 @@ function addSquirmer!(model::LBMmodel;
     end
 
     # the momentum input is defined, and the inputs are turned into vectors to allow for multithreading
-    momentumInput = [0. for _ in 1:model.spaceTime.dims];
+    momentumInput = fill(0., model.spaceTime.dims);
 
     momentumInput = fill(momentumInput, length(model.velocities) + 1)
     angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
@@ -197,7 +200,8 @@ function addSquirmer!(model::LBMmodel;
     append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
-        wallRegion = [false for _ in model.massDensity] |> sparse
+        wallRegion = fill(false, size(model.massDensity))
+        dims <= 2 ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
         scheme == :ladd && (append!(model.schemes, [:bounceBack]))
@@ -217,7 +221,7 @@ function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluid
     ci = velocities[id].c .* Δx_Δt
     wi = velocities[id].w
     if :forceDensity in (kwInitialConditions |> keys)
-        consistencyTerm = [[0.; 0] for _ in massDensity]
+        consistencyTerm = fill(zero(kwInitialConditions.forceDensity[1]), size(massDensity))
         fluidIndices = (massDensity .≈ 0) .|> b -> !b;
         consistencyTerm[fluidIndices] = kwInitialConditions.forceDensity[fluidIndices] ./ massDensity[fluidIndices]
         u -= 0.5 * kwInitialConditions.Δt * consistencyTerm
@@ -298,9 +302,9 @@ function modelInit(;
 
     # if default conditions were chosen, u is built. Otherwise its dimensions are verified
     if fluidVelocity == :default
-        fluidVelocity = [[0. for _ in 1:dims] for _ in massDensity];
+        fluidVelocity = fill(fill(0., dims), size(massDensity))
     elseif size(fluidVelocity) |> length == 1
-        fluidVelocity = [fluidVelocity |> Array{Float64} for _ in massDensity];
+        fluidVelocity = fill(fluidVelocity |> Array{Float64}, size(massDensity))
     else
         @assert all(id -> size(fluidVelocity)[id]==expectedSizes[id], eachindex(expectedSizes)) "The fluid velocity given has the wrong size! $(expectedSizes) expected."
     end
@@ -344,7 +348,7 @@ function modelInit(;
     append!(schemes, [collisionModel])
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
-    wallRegion = [false for _ in massDensity]
+    wallRegion = fill(false, size(massDensity))
     if walledDimensions != :default && length(walledDimensions) != 0
         if dampenEcho
             append!(schemes, [:cbc])
@@ -360,7 +364,7 @@ function modelInit(;
 
         append!(schemes, [:bounceBack])
     end
-    dims <= 2 && (wallRegion = sparse(wallRegion))
+    dims <= 2 ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
 
     if :bounceBack in schemes || :trt in schemes
         massDensity[wallRegion] .= 0;
@@ -370,7 +374,7 @@ function modelInit(;
 
     #= -------------------- boundary conditions (moving walls) ------------------- =#
     if solidNodeVelocity isa Array && solidNodeVelocity[1] isa Vector && size(solidNodeVelocity) == size(massDensity)
-        maskedArray = [[0. for _ in 1:dims] for _ in solidNodeVelocity]
+        maskedArray = fill(fill(0., dims), size(solidNodeVelocity))
         maskedArray[wallRegion] = solidNodeVelocity[wallRegion]
         boundaryConditionsParams = merge(boundaryConditionsParams, (; solidNodeVelocity = maskedArray));
 
@@ -386,14 +390,14 @@ function modelInit(;
         forceDensity = [[0., 0]];
     # if a single vector is defined it is assumed the force denisty is constant
     elseif forceDensity isa Vector && size(forceDensity) == size(fluidVelocity[1])
-        forceDensity = [forceDensity |> Vector{Float64} for _ in massDensity];
-        forceDensity[wallRegion] = [[0.,0] for _ in forceDensity[wallRegion]]
+        forceDensity = fill(forceDensity |> Vector{Float64}, size(massDensity))
+        forceDensity[wallRegion] = [fill(0., dims) for _ in forceDensity[wallRegion]]
         kwInitialConditions = merge(kwInitialConditions, (; forceDensity, Δt))
 
         append!(schemes, [forcingScheme])
     # if a force density field is defined its dimensions are verified
     elseif size(forceDensity) == size(massDensity)
-        forceDensity[wallRegion] = [[0.,0] for _ in forceDensity[wallRegion]]
+        forceDensity[wallRegion] = [fill(0., dims) for _ in forceDensity[wallRegion]]
         kwInitialConditions = merge(kwInitialConditions, (; forceDensity, Δt))
 
         append!(schemes, [forcingScheme])

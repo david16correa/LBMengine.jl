@@ -31,7 +31,7 @@ end
 function hydroVariablesUpdate!(model::LBMmodel; useEquilibriumScheme = false)
     model.massDensity = massDensityGet(model)
     model.momentumDensity = momentumDensityGet(model; useEquilibriumScheme = useEquilibriumScheme)
-    model.fluidVelocity = fill([0.; 0], size(model.massDensity))
+    model.fluidVelocity = fill(fill(0., model.spaceTime.dims), size(model.massDensity))
     fluidIndices = (model.massDensity .≈ 0) .|> b -> !b;
     model.fluidVelocity[fluidIndices] = model.momentumDensity[fluidIndices] ./ model.massDensity[fluidIndices]
 
@@ -159,8 +159,8 @@ function collisionStep(model::LBMmodel)
                 equilibriumDistributions_solidNodeVelocity = [equilibriumDistribution(id, model; particleId = particle.id) for id in eachindex(model.velocities)]
                 E = particle.boundaryConditionsParams.solidRegion # fuzzy edges are still not implemented!
 
-                equilibriumDistributions_solidNodeVelocityPlus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
-                equilibriumDistributions_solidNodeVelocityMinus = [[] for _ in eachindex(model.velocities)] |> Vector{Array{Float64}}
+                equilibriumDistributions_solidNodeVelocityPlus = fill([], length(model.velocities)) |> Vector{Array{Float64}}
+                equilibriumDistributions_solidNodeVelocityMinus = fill([], length(model.velocities)) |> Vector{Array{Float64}}
 
                 for id in eachindex(model.velocities)
                     conjugateId = model.boundaryConditionsParams.oppositeVectorId[id]
@@ -208,11 +208,11 @@ function collisionStep(model::LBMmodel)
         end
     end
 
-    output = Omega # I know it's useless
     Threads.@threads for id in eachindex(model.velocities)
-        output[id] += model.distributions[id]
+        Omega[id] += model.distributions[id]
     end
-    return output
+
+    return Omega
 end
 
 function guoForcingTerm(id::Int64, model::LBMmodel)
@@ -462,7 +462,7 @@ end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = :default, ticksSaved = :default)
 
-    verbose && (println("Thrads = $(Threads.nthreads())"))
+    verbose && (println("Threads.nthreads() = $(Threads.nthreads())"))
 
     @assert any(x -> x == :default, [simulationTime, ticks]) "simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!"
     if simulationTime == :default && ticks == :default
@@ -488,7 +488,12 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
     for t in time |> eachindex
         tick!(model);
         verbose && t in outputTimes && (print("\r t = $(model.time)"); flush(stdout))
-        :saveData in model.schemes && (model.tick % ticksBetweenSaves == 0) && writeTrajectories(model)
+        if :saveData in model.schemes
+            (model.tick % ticksBetweenSaves == 0) && writeTrajectories(model)
+            # if there are particles in the system, their trajectories are stored as well;
+            # since storage is not an issue here, all ticks are saved
+            writeParticlesTrajectories(model)
+        end
     end
     print("\r");
 
