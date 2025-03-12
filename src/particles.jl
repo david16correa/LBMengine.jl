@@ -21,7 +21,8 @@ function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
     xMinusR = X - particle.position
     xMinusR_norm = xMinusR |> norm
 
-    :ladd in model.schemes && (abs(xMinusR_norm - particle.particleParams.radius) > model.spaceTime.latticeParameter) && return zero(particle.position)
+    # for a spherical particle, the ladd scheme only needs the nodes closest to the interphase!
+    (:bead in particle.particleParams.properties) && :ladd in model.schemes && (abs(xMinusR_norm - particle.particleParams.radius) > model.spaceTime.latticeParameter) && return zero(particle.position)
 
     bulkV = particle.velocity + cross(particle.angularVelocity, xMinusR)
 
@@ -29,7 +30,7 @@ function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
 
     @assert :squirmer in particle.particleParams.properties "As of right now, only beads and squirmers are supported."
 
-    # fancyR := (x - R)/|x - R|, following Griffiths electrodynamics. This helps me read.
+    # fancyR := (x - R)/|x - R|, following Griffiths' electrodynamics book. This helps me read.
     fancyR = xMinusR/xMinusR_norm
 
     e_dot_fancyR = dot(particle.particleParams.swimmingDirection, fancyR);

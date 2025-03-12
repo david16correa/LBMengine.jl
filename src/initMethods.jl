@@ -119,6 +119,7 @@ function addSquirmer!(model::LBMmodel;
     elseif model.spaceTime.dims == 3
         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
         angularMomentumInput = [0., 0, 0]
+        angularVelocity = [0., 0, 0]
     else
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
@@ -186,7 +187,7 @@ function addSquirmer!(model::LBMmodel;
         (; solidRegion = [], streamingInvasionRegions = []),
         position,
         velocity,
-        0.,
+        angularVelocity,
         [],
         momentumInput,
         angularMomentumInput,
@@ -201,7 +202,7 @@ function addSquirmer!(model::LBMmodel;
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
         wallRegion = fill(false, size(model.massDensity))
-        dims <= 2 ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
+        (model.spaceTime.dims <= 2) ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
         scheme == :ladd && (append!(model.schemes, [:bounceBack]))
@@ -310,16 +311,18 @@ function modelInit(;
     end
 
     #= ------------------------ choosing the velocity set ----------------------- =#
-    # if dimensions are too large, and the user did not define a velocity set, then there's an error
-    if (dims >= 4) && !(velocities == :default)
-        error("for dimensions higher than 3 a velocity set must be defined using a Vector{LBMvelocity}! modelInit(...; velocities = yourInput)")
     # if the user did not define a velocity set, then a preset is chosen
-    elseif velocities == :default
-        velocities = [[D1Q3]; [D2Q9]; [D3Q27]] |> v -> v[dims]
-    # if the user did define a velocity set, its type is verified
-    elseif !(velocities isa Vector{LBMvelocity})
-        error("please input a velocity set using a Vector{LBMvelocity}!")
+    if velocities == :default
+        # if dimensions are too large, and the user did not define a velocity set, then there's an error
+        @assert (dims <= 3) "for dimensions higher than 3 a velocity set must be defined using a Vector{LBMvelocity}! modelInit(...; velocities = yourInput)"
+        velocities = [[D1Q3]; [D2Q9]; [D3Q15]] |> v -> v[dims]
+    else
+        id = findfirst(set -> set == velocities, [:D1Q3, :D2Q9, :D3Q15, :D3Q19, :D3Q27])
+        @assert id isa Number "If a default velocity set is chosen, it must be one of the following: [:D1Q3, :D2Q9, :D3Q15, :D3Q19, :D3Q27]"
+        velocities = [D1Q3, D2Q9, D3Q15, D3Q19, D3Q27][id]
     end
+    @assert (velocities isa Vector{LBMvelocity}) "Please input a velocity set using a Vector{LBMvelocity}!"
+    @assert (velocities[1].c |> length == dims) "The chosen velocity must be $dims-dimensional!"
 
     #= ---------------- space and time variables are initialized ---------------- =#
     # by default Δt = Δx, as this is the most stable

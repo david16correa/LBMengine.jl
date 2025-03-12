@@ -479,6 +479,8 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
     if :saveData in model.schemes
         @assert any(x -> x == :default, [ticksBetweenSaves, ticksSaved]) "ticksBetweenSaves, and ticksSaved cannot be both simultaneously defined!"
         (ticksSaved == :default) && (ticksSaved = 100);
+        ticksSaved -= 2; # the initial and final saves are accounted for
+        ticksSaved = maximum([ticksSaved, 1]) # at least one intermediate tick is saved
         (ticksBetweenSaves == :default) && (ticksBetweenSaves = simulationTime / model.spaceTime.latticeParameter / ticksSaved |> round |> Int64); # this may not be exact
         mkOutputDirs();
     end
