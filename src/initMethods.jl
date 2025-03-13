@@ -116,6 +116,7 @@ function addSquirmer!(model::LBMmodel;
     if model.spaceTime.dims == 2
         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
         angularMomentumInput = 0.
+        angularVelocity = 0.
     elseif model.spaceTime.dims == 3
         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
         angularMomentumInput = [0., 0, 0]

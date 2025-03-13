@@ -94,27 +94,6 @@ end
 
 #= ==========================================================================================
 =============================================================================================
-shift auxiliary functions
-=============================================================================================
-========================================================================================== =#
-
-function pbcIndexShift(indices::UnitRange{Int64}, Δ::Int64)
-    if Δ > 0
-        return [indices[end-Δ+1:end]; indices[1:end-Δ]]
-    elseif Δ < 0
-        # originalmente era [indices[(Δ+1):end]; indices[1:Δ]] con un shift positivo, pero Δ < 0
-        return [indices[(-Δ+1):end]; indices[1:-Δ]]
-    else
-        return indices
-    end
-end
-
-function pbcMatrixShift(M::Union{Array, SparseMatrixCSC, BitArray}, Δ::Vector{Int64})
-    return size(M) |> sizeM -> [pbcIndexShift(1:sizeM[i], Δ[i]) for i in eachindex(sizeM)] |> shiftedIndices -> M[shiftedIndices...]
-end
-
-#= ==========================================================================================
-=============================================================================================
 wall and fluid nodes functions
 =============================================================================================
 ========================================================================================== =#
@@ -158,13 +137,13 @@ bounce-back boundary conditions
 ========================================================================================== =#
 
 function bounceBackPrep(wallRegion::Union{SparseMatrixCSC, BitArray}, velocities::Vector{LBMvelocity}; returnStreamingInvasionRegions = false)
-    cs = [velocity.c for velocity in velocities];
+    cs = [velocity.c |> Tuple for velocity in velocities];
 
-    streamingInvasionRegions = [(pbcMatrixShift(wallRegion, -c) .|| wallRegion) .⊻ wallRegion for c in cs]
+    streamingInvasionRegions = [(circshift(wallRegion, -1 .* c) .|| wallRegion) .⊻ wallRegion for c in cs]
 
     returnStreamingInvasionRegions && return streamingInvasionRegions
 
-    oppositeVectorId = [findfirst(x -> x == -c, cs) for c in cs]
+    oppositeVectorId = [findfirst(x -> x == -1 .* c, cs) for c in cs]
 
     return streamingInvasionRegions, oppositeVectorId
 end

@@ -385,7 +385,8 @@ function tick!(model::LBMmodel)
     # streaming (or propagation), with streaming invasion exchange
     Threads.@threads for id in eachindex(model.velocities)
         # distributions are initially streamed
-        streamedDistribution = pbcMatrixShift(collisionedDistributions[id], model.velocities[id].c)
+        cTuple = model.velocities[id].c |> Tuple;
+        streamedDistribution = circshift(collisionedDistributions[id], cTuple)
 
         if :bounceBack in model.schemes
             # the wall region, the invasion region of the fluid, and the conjugate of the fluid with opposite momentum are retrieved
@@ -411,7 +412,7 @@ function tick!(model::LBMmodel)
                 ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
                 wi = model.velocities[id].w
 
-                uwdotci = pbcMatrixShift(model.boundaryConditionsParams.solidNodeVelocity, model.velocities[id].c) |> uw -> vectorFieldDotVector(uw,ci)
+                uwdotci = circshift(model.boundaryConditionsParams.solidNodeVelocity, cTuple) |> uw -> vectorFieldDotVector(uw,ci)
                 streamedDistribution[conjugateInvasionRegion] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
             end
 
@@ -426,7 +427,7 @@ function tick!(model::LBMmodel)
                     sum(conjugateBoundaryNodes) == 0 && break
 
                     # the solids momentum is transfered to the fluid
-                    uw = particle.nodeVelocity + pbcMatrixShift(particle.nodeVelocity, model.velocities[id].c)
+                    uw = particle.nodeVelocity + circshift(particle.nodeVelocity, cTuple)
                     uwdotci = vectorFieldDotVector(uw,ci)
                     streamedDistribution[conjugateBoundaryNodes] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateBoundaryNodes] .* uwdotci[conjugateBoundaryNodes]
 
