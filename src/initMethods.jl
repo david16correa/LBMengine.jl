@@ -229,8 +229,8 @@ function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluid
         u -= 0.5 * kwInitialConditions.Δt * consistencyTerm
     end
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/fluidParams.c2_s + udotci.^2 / (2 * fluidParams.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*fluidParams.c2_s) .+ 1
+    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci*fluidParams.invC2_s + udotci.^2 * (0.5 * fluidParams.invC4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(u, u)*(0.5*fluidParams.invC2_s) .+ 1
     return secondStep .* (wi * massDensity)
 end
 
@@ -336,18 +336,19 @@ function modelInit(;
 
     #= -------------------- fluid parameters are initialized -------------------- =#
     c_s, c2_s, c4_s = Δx_Δt/√3, Δx_Δt^2 / 3, Δx_Δt^4 / 9;
+    invC_s, invC2_s, invC4_s = √3/Δx_Δt, 3/Δx_Δt^2, 9/Δx_Δt^4;
     collisionModel == :default && (collisionModel = :trt)
     relaxationTime = relaxationTimeRatio * Δt;
 
     @assert (collisionModel == :bgk || collisionModel == :trt) "Collision model $collisionModel is not implemented!"
 
     if collisionModel == :bgk
-        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, isFluidCompressible);
+        fluidParams = (; c_s, c2_s, c4_s, invC_s, invC2_s, invC4_s, relaxationTime, viscosity, isFluidCompressible);
     elseif collisionModel == :trt
         relaxationTimePlus = relaxationTime
         kineticParameter == :debug && (kineticParameter = viscosity^2/(c4_s * Δt^2)) # here, :trt = :bgk
         relaxationTimeMinus = kineticParameter * c2_s * Δt^2 / viscosity + Δt/2
-        fluidParams = (; c_s, c2_s, c4_s, relaxationTime, viscosity, relaxationTimePlus, relaxationTimeMinus, isFluidCompressible);
+        fluidParams = (; c_s, c2_s, c4_s, invC_s, invC2_s, invC4_s, relaxationTime, viscosity, relaxationTimePlus, relaxationTimeMinus, isFluidCompressible);
     end
     append!(schemes, [collisionModel])
 
@@ -426,7 +427,8 @@ function modelInit(;
     #= ---------------------------------- saving data setup ---------------------------------- =#
     if saveData
         append!(schemes, [:saveData])
-        mkOutputDirs()
+        rm("output.lbm"; force=true, recursive=true)
+        mkdir("output.lbm")
     end
 
     #= ------------------------------ the model is initialized ------------------------------ =#

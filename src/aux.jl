@@ -233,7 +233,7 @@ function writeParticlesTrajectories(model::LBMmodel)
 end
 
 function writeTensor(model::LBMmodel, T::Array, name::String)
-    mkOutputDirs()
+    mkpath("output.lbm")
 
     if model.spaceTime.dims == 2
         metadataDf = DataFrame(
@@ -274,10 +274,6 @@ end
 output management
 =============================================================================================
 ========================================================================================== =#
-
-function mkOutputDirs()
-    !isdir("output.lbm") && mkdir("output.lbm")
-end
 
 function mkFigDirs()
     !isdir("figs") && mkdir("figs")

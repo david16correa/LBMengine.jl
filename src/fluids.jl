@@ -55,8 +55,8 @@ function equilibriumDistribution(id::Int64, model::LBMmodel; particleId = :defau
         u = model.fluidVelocity
     end
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci/model.fluidParams.c2_s + udotci.^2 / (2 * model.fluidParams.c4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(u, u)/(2*model.fluidParams.c2_s)
+    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci*model.fluidParams.invC2_s + udotci.^2 * (0.5 * model.fluidParams.invC4_s)
+    secondStep = firstStep - vectorFieldDotVectorField(u, u)*(0.5*model.fluidParams.invC2_s)
 
     model.fluidParams.isFluidCompressible && return wi * ((secondStep .+ 1) .* model.massDensity)
 
@@ -218,23 +218,23 @@ end
 function guoForcingTerm(id::Int64, model::LBMmodel)
     # the quantities to be used are saved separately
     ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
-    c2_s = model.fluidParams.c2_s
+    invC2_s = model.fluidParams.invC2_s
     wi = model.velocities[id].w
     U = model.fluidVelocity
     F = model.forceDensity
     Δt = model.spaceTime.Δt
 
     # the forcing term is found (terms common for both collision methods are found first)
-    secondTerm = vectorFieldDotVector(U, ci) |> udotci -> [ci * v for v in udotci]/model.fluidParams.c4_s
+    secondTerm = vectorFieldDotVector(U, ci) |> udotci -> [ci * v for v in udotci]*model.fluidParams.invC4_s
     if :bgk in model.schemes
-        firstTerm = [ci - u for u in U] / c2_s
+        firstTerm = [ci - u for u in U] * invC2_s
         intermediateStep = vectorFieldDotVectorField(firstTerm + secondTerm, F)
         return wi * Δt * (1 - Δt/(2 * model.fluidParams.relaxationTime)) * intermediateStep
     elseif :trt in model.schemes
-        intermediateStep = vectorFieldDotVectorField(-U/c2_s + secondTerm, F)
+        intermediateStep = vectorFieldDotVectorField(-U*invC2_s + secondTerm, F)
         plusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimePlus)) * intermediateStep
 
-        intermediateStep = vectorFieldDotVector(F, ci/c2_s)
+        intermediateStep = vectorFieldDotVector(F, ci*invC2_s)
         minusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimeMinus)) * intermediateStep
 
         return wi * Δt * (plusPart + minusPart)
@@ -413,7 +413,7 @@ function tick!(model::LBMmodel)
                 wi = model.velocities[id].w
 
                 uwdotci = circshift(model.boundaryConditionsParams.solidNodeVelocity, cTuple) |> uw -> vectorFieldDotVector(uw,ci)
-                streamedDistribution[conjugateInvasionRegion] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
+                streamedDistribution[conjugateInvasionRegion] += (2 * wi * model.fluidParams.invC2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
             end
 
             # if any particle is moving, its momentum is exchanged with the fluid
@@ -429,7 +429,7 @@ function tick!(model::LBMmodel)
                     # the solids momentum is transfered to the fluid
                     uw = particle.nodeVelocity + circshift(particle.nodeVelocity, cTuple)
                     uwdotci = vectorFieldDotVector(uw,ci)
-                    streamedDistribution[conjugateBoundaryNodes] += (2 * wi / model.fluidParams.c2_s) * model.massDensity[conjugateBoundaryNodes] .* uwdotci[conjugateBoundaryNodes]
+                    streamedDistribution[conjugateBoundaryNodes] += (2 * wi * model.fluidParams.invC2_s) * model.massDensity[conjugateBoundaryNodes] .* uwdotci[conjugateBoundaryNodes]
 
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
@@ -461,7 +461,7 @@ function tick!(model::LBMmodel)
     (:ladd in model.schemes || :psm in model.schemes) && (moveParticles!(model));
 end
 
-function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksBetweenSaves = :default, ticksSaved = :default)
+function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksSaved = :default)
 
     verbose && (println("Threads.nthreads() = $(Threads.nthreads())"))
 
@@ -478,30 +478,24 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
     ticks = length(time);
 
     if :saveData in model.schemes
-        @assert any(x -> x == :default, [ticksBetweenSaves, ticksSaved]) "ticksBetweenSaves, and ticksSaved cannot be both simultaneously defined!"
         (ticksSaved == :default) && (ticksSaved = 100);
-        ticksSaved -= 2; # the initial and final saves are accounted for
-        ticksSaved = maximum([ticksSaved, 1]) # at least one intermediate tick is saved
-        (ticksBetweenSaves == :default) && (ticksBetweenSaves = simulationTime / model.spaceTime.latticeParameter / ticksSaved |> round |> Int64); # this may not be exact
-        mkOutputDirs();
+        totalTicks = floor(simulationTime/model.spaceTime.Δt)
+        checkPoints = range(0, stop=totalTicks, length=ticksSaved) |> collect .|> round .|> Int64
     end
 
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
 
     for t in time |> eachindex
         tick!(model);
-        verbose && t in outputTimes && (print("\r t = $(model.time)"); flush(stdout))
+        verbose && (t in outputTimes) && (print("\r t = $(round(model.time; digits = 2))"); flush(stdout))
         if :saveData in model.schemes
-            (model.tick % ticksBetweenSaves == 0) && writeTrajectories(model)
+            (model.tick in checkPoints) && writeTrajectories(model)
             # if there are particles in the system, their trajectories are stored as well;
             # since storage is not an issue here, all ticks are saved
             writeParticlesTrajectories(model)
         end
     end
     print("\r");
-
-    hydroVariablesUpdate!(model);
-    :saveData in model.schemes && writeTrajectories(model)
 
     return nothing
 end
