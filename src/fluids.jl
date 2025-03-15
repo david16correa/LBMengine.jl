@@ -462,7 +462,6 @@ function tick!(model::LBMmodel)
 end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksSaved = :default)
-
     verbose && (println("Threads.nthreads() = $(Threads.nthreads())"))
 
     @assert any(x -> x == :default, [simulationTime, ticks]) "simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!"
