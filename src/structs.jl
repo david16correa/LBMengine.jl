@@ -41,6 +41,8 @@ mutable struct LBMmodel
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
     particles::Vector{LBMparticle}
     schemes::Vector{Symbol}
+    gpuImmutable::NamedTuple
+    gpuTmp::NamedTuple
     #= schemes implemented thus far:
         :bgk (collision model, stable),
         :trt (collision model, stable),

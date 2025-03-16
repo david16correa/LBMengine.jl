@@ -163,7 +163,9 @@ function addSquirmer!(model::LBMmodel;
     if slipSpeed == :default
         (swimmingSpeed == :default) && (swimmingSpeed = 1e-3);
         @assert swimmingSpeed isa Number "swimmingSpeed must be a number!"
-        B1 = 3/2 * swimmingSpeed
+        # the sign in the swimming speed will alter the direction, but not the speed itself
+        swimmingDirection *= sign(swimmingSpeed)
+        B1 = 3/2 * swimmingSpeed |> abs
         B2 = B1*beta
     else
         @assert slipSpeed isa Number "slip speed must be a number!"
@@ -431,6 +433,16 @@ function modelInit(;
         mkdir("output.lbm")
     end
 
+    #= ---------------------------------- GPU acceleration ---------------------------------- =#
+    gpuImmutable = (;)
+    gpuTmp = (;)
+    if CUDA.functional()
+        gpuImmutable = merge(gpuImmutable, (;
+            cs = [velocity.c |> CuArray{Int8} for velocity in velocities],
+            forceDensity = [f[k] for f in forceDensity, k in 1:dims]|>CuArray{Float64}
+        ));
+    end
+
     #= ------------------------------ the model is initialized ------------------------------ =#
     model = LBMmodel(
         spaceTime, # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
@@ -446,7 +458,9 @@ function modelInit(;
         velocities, # c_i for all i
         boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
         []|>Vector{LBMparticle}, # initially there will be no particles
-        unique(schemes)
+        unique(schemes),
+        gpuImmutable,
+        gpuTmp,
     );
 
     #= ---------------------------- consistency check ---------------------------- =#

@@ -1,12 +1,18 @@
 module LBMengine
-    using SparseArrays
+    using SparseArrays, CUDA
     using CairoMakie
     using DataFrames, CSV, Dates
     import LinearAlgebra.dot, LinearAlgebra.norm
 
     include("structs.jl");
     include("aux.jl");
-    include("fluids.jl");
+
+    if CUDA.functional()
+        include("fluids_gpu.jl");
+    else
+        include("fluids.jl");
+    end
+
     include("initMethods.jl");
     include("particles.jl")
 
