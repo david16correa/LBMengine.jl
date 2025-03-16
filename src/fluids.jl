@@ -12,16 +12,15 @@ function momentumDensityGet(model::LBMmodel; useEquilibriumScheme = false)
     # en estep punto se dará por hecho que la fuerza es constante!!
     bareMomentum = sum(scalarFieldTimesVector(model.distributions[id], model.velocities[id].c) for id in eachindex(model.velocities))
 
-    if useEquilibriumScheme
-        if :shan in model.schemes
-            return bareMomentum + model.fluidParams.relaxationTime * model.spaceTime.Δt^2 * model.forceDensity
-        end
-        if :guo in model.schemes
-            return bareMomentum + 0.5 * model.spaceTime.Δt * model.forceDensity
-        end
+    if :guo in model.schemes
+        return bareMomentum + 0.5 * model.spaceTime.Δt * model.forceDensity
     end
 
-    if :shan in model.schemes || :guo in model.schemes
+    if :shan in model.schemes
+        if useEquilibriumScheme
+            return bareMomentum + model.fluidParams.relaxationTime * model.spaceTime.Δt^2 * model.forceDensity
+        end
+
         return bareMomentum + 0.5 * model.spaceTime.Δt * model.forceDensity
     end
 
