@@ -9,6 +9,7 @@ module LBMengine
 
     if CUDA.functional()
         include("fluids_gpu.jl");
+        include("aux_gpu.jl");
     else
         include("fluids.jl");
     end

@@ -254,7 +254,7 @@ function modelInit(;
     dampenEcho = false, # use characteristic boundary conditions to absorb sound waves
     solidNodes = :default, # default: no solid nodes (other than the walls) 
     solidNodeVelocity = :default, # default: static solids - u = [0,0]
-    isFluidCompressible = false,
+    isFluidCompressible = true, # this is more stable for several schemes. E.g. ladd
     forceDensity = :default, # default: F(0) = 0
     forcingScheme = :default, # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
     saveData = false, # by default, no data is saved

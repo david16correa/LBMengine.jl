@@ -4,102 +4,20 @@ gpu accelerated LBM
 =============================================================================================
 ========================================================================================== =#
 
-#= ==========================================================================================
-=============================================================================================
-aux
-=============================================================================================
-========================================================================================== =#
-
-function sumMatrices_kernel(C, matricesTensor, N)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i ≤ size(C, 1) && j ≤ size(C, 2)
-        sum_value = zero(eltype(C))  # Use register instead of global memory
-        for k in 1:N
-            sum_value += matricesTensor[i,j,k]
-        end
-        C[i, j] = sum_value  # Single global memory write
-    end
-    return nothing
-end
-function sumMatrices_gpu(matrices)
-    #= matrices = matrices |> Tuple =#
-    A, N = matrices[1], length(matrices)
-    matricesTensor = reshape(reduce(hcat, matrices), size(A)..., N) |> CuArray
-    #
-    C = CUDA.zeros(eltype(A), size(A))  # Allocate result on GPU
-    threads = (16, 16)  # 16x16 thread block
-    blocks = (cld(size(A, 1), threads[1]), cld(size(A, 2), threads[2]))
-    #
-    @cuda threads=threads blocks=blocks sumMatrices_kernel(C, matricesTensor, N)
-    return C
-end
-
-function scalarFieldTimesVector_kernel(output, scalarField, vector, N)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i ≤ size(scalarField, 1) && j ≤ size(scalarField, 2)
-        for k in 1:N
-            output[i,j,k] = scalarField[i,j] * vector[k]
-        end
-    end
-    return nothing
-end
-function scalarFieldTimesVector_gpu(scalarField, vector)
-    N = length(vector)
-    output = CuArray{eltype(scalarField)}(undef, (size(scalarField)..., length(vector))) # Output matrix
-    threads = (16, 16)  # 16x16 thread block
-    blocks = (cld(size(scalarField, 1), threads[1]), cld(size(scalarField, 2), threads[2]))
-    #
-    @cuda threads=threads blocks=blocks scalarFieldTimesVector_kernel(output, scalarField, vector, N)
-    return output
-end
-
-function findFluidVelocity_kernel(fluidVelocity, massDensity, momentumDensity)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-
-    rows, cols, depth = size(fluidVelocity)
-
-    if i ≤ rows && j ≤ cols
-        for k in 1:depth  # Iterate over the small depth dimension
-            if !(massDensity[i, j] ≈ 0)
-                fluidVelocity[i, j, k] = momentumDensity[i, j, k] / massDensity[i, j]
-            end
-        end
-    end
-end
-function findFluidVelocity_gpu(massDensity, momentumDensity)
-    rows, cols, depth = size(momentumDensity)
-    fluidVelocity = CUDA.zeros(eltype(momentumDensity), (rows, cols, depth))
-
-    threads = (16, 16)  # 16x16 threads per block (2D configuration)
-    blocks = (cld(rows, threads[1]), cld(cols, threads[2]))  # Only rows & cols in grid
-
-    @cuda threads=threads blocks=blocks findFluidVelocity_kernel(fluidVelocity, massDensity, momentumDensity)
-    return fluidVelocity
-end
-
-
-
-#= ==========================================================================================
-=============================================================================================
-gpu accelerated functions
-=============================================================================================
-========================================================================================== =#
-
 function massDensityGet_gpu(model::LBMmodel)
-    return sum(model.gpuTmp.distributions)
+    # sum will output an array of the same dimensions as its input; the last dimension of the
+    # input array corresponds to the auxiliary fluids, which makes it have one dimension more than
+    # the desired mass density. Rang solves this issue.
+    rang = (((1:s for s in size(model.gpuTmp.distributions)[1:end-1]))..., 1)
+    return sum(model.gpuTmp.distributions, dims=model.spaceTime.dims+1)[rang...]
 end
 
 function momentumDensityGet_gpu(model::LBMmodel; useEquilibriumScheme = false)
     # en estep punto se dará por hecho que la fuerza es constante!!
-    bareMomentum = [scalarFieldTimesVector_gpu(model.gpuTmp.distributions[id], model.gpuImmutable.cs[id]) for id in eachindex(model.gpuImmutable.cs)] |> sum
+    rang(id) = (((1:s for s in size(model.gpuTmp.distributions)[1:end-1]))..., id)
+    bareMomentum = [scalarFieldTimesVector_gpu(model.gpuTmp.distributions[rang(id)...], model.gpuImmutable.cs[id]) for id in eachindex(model.gpuImmutable.cs)] |> sum
 
     if :guo in model.schemes
-        sumTerm = 
         return CUDA.@. bareMomentum + 0.5 * model.spaceTime.Δt * model.gpuImmutable.forceDensity
     end
 
@@ -122,13 +40,112 @@ function hydroVariablesUpdate_gpu!(model::LBMmodel; useEquilibriumScheme = false
     fluidVelocity = findFluidVelocity_gpu(massDensity, momentumDensity)
 
     model.gpuTmp = (;
-        distributions = model.distributions .|> CuArray{Float64},
+        distributions = CuArray(cat(model.distributions...; dims=model.spaceTime.dims+1)),
         massDensity = massDensity,
         fluidVelocity = fluidVelocity
     )
 
     return nothing
 end
+
+function equilibriumDistribution_gpu(id::Int64, model::LBMmodel)
+    # the quantities to be used are saved separately
+    ci = model.gpuImmutable.cs[id] .* model.spaceTime.Δx_Δt
+    wi = model.velocities[id].w
+
+    u = model.gpuTmp.fluidVelocity
+
+    # the equilibrium distribution is found step by step and returned
+    firstStep = vectorFieldDotVector_gpu(u, ci) |> udotci -> udotci*model.fluidParams.invC2_s + udotci.^2 * (0.5 * model.fluidParams.invC4_s)
+    secondStep = firstStep - vectorFieldDotVectorField_gpu(u, u)*(0.5*model.fluidParams.invC2_s)
+
+    return wi * ((secondStep .+ 1) .* model.gpuTmp.massDensity)
+    #= model.fluidParams.isFluidCompressible && return wi * ((secondStep .+ 1) .* model.massDensity) =#
+
+    #= return wi * model.gpuTmp.massDensity + wi * (model.initialConditions.massDensity .* secondStep) =#
+end
+
+function nonEquilibriumDistribution_gpu(id::Int64, model::LBMmodel)
+    rang = (((1:s for s in size(model.gpuTmp.distributions)[1:end-1]))..., id)
+    return model.gpuTmp.distributions[rang...] - equilibriumDistribution_gpu(id, model)
+end
+
+function collisionStep_gpu(model::LBMmodel)
+    # preliminary preparation
+    rowsCols = size(model.gpuTmp.distributions)
+    rang(id) = (((1:s for s in rowsCols[1:end-1]))..., id)
+
+    # the equilibrium distributions are found
+    equilibriumDistributions = CuArray{eltype(model.gpuTmp.distributions)}(undef, rowsCols) # Output matrix
+    for id in eachindex(model.velocities)
+        equilibriumDistributions[rang(id)...] = equilibriumDistribution_gpu(id, model)
+    end
+
+    # the collision operator is found
+    if :bgk in model.schemes
+        # the Bhatnagar-Gross-Krook collision opeartor is used
+        Omega = -model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.gpuTmp.distributions - equilibriumDistributions)
+    elseif :trt in model.schemes
+        # the two-relaxation-time collision opeartor is used
+        conjugateIds = model.boundaryConditionsParams.oppositeVectorId
+
+        conjugateDistributions = model.gpuTmp.distributions[rang(conjugateIds)...]
+        distributionsPlus = 0.5 * (model.gpuTmp.distributions + conjugateDistributions)
+        distributionsMinus = 0.5 * (model.gpuTmp.distributions - conjugateDistributions)
+
+        conjugateDistributions = equilibriumDistributions[rang(conjugateIds)...]
+        equilibriumDistributionsPlus = 0.5 * (equilibriumDistributions + conjugateDistributions)
+        equilibriumDistributionsMinus = 0.5 * (equilibriumDistributions - conjugateDistributions)
+
+        OmegaPlus = -model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus - equilibriumDistributionsPlus)
+        OmegaMinus = -model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus - equilibriumDistributionsMinus)
+
+        Omega = OmegaPlus + OmegaMinus
+    end
+
+    # forcing terms are added
+    if :guo in model.schemes
+        for id in eachindex(model.velocities)
+            Omega[rang(id)...] += guoForcingTerm_gpu(id, model)
+        end
+    end
+
+    # the collision step is performed
+    Omega += model.gpuTmp.distributions
+
+    return Omega
+end
+
+function guoForcingTerm_gpu(id::Int64, model::LBMmodel)
+    # the quantities to be used are saved separately
+    ci = model.gpuImmutable.cs[id] .* model.spaceTime.Δx_Δt
+    invC2_s = model.fluidParams.invC2_s
+    wi = model.velocities[id].w
+    U = model.gpuTmp.fluidVelocity
+    F = model.gpuImmutable.forceDensity
+    Δt = model.spaceTime.Δt
+
+    # the forcing term is found (terms common for both collision methods are found first)
+    secondTerm = vectorFieldDotVector_gpu(U, ci) |> udotci -> scalarFieldTimesVector_gpu(udotci, ci)*model.fluidParams.invC4_s
+    if :bgk in model.schemes
+        firstTerm = vectorFieldPlusVector_gpu(-U, ci) * invC2_s
+        intermediateStep = vectorFieldDotVectorField_gpu(firstTerm + secondTerm, F)
+        return wi * Δt * (1 - Δt/(2 * model.fluidParams.relaxationTime)) * intermediateStep
+    elseif :trt in model.schemes
+        intermediateStep = vectorFieldDotVectorField_gpu(-U*invC2_s + secondTerm, F)
+        plusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimePlus)) * intermediateStep
+
+        intermediateStep = vectorFieldDotVector_gpu(F, ci*invC2_s)
+        minusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimeMinus)) * intermediateStep
+
+        return wi * Δt * (plusPart + minusPart)
+    end
+end
+
+#= function cbcBoundaries_gpu!(model::LBMmodel) =#
+#= end =#
+
+
 
 #= ==========================================================================================
 =============================================================================================
@@ -168,7 +185,8 @@ function hydroVariablesUpdate!(model::LBMmodel; useEquilibriumScheme = false)
     model.fluidVelocity[fluidIndices] = model.momentumDensity[fluidIndices] ./ model.massDensity[fluidIndices]
 
     model.gpuTmp = (;
-        distributions = model.distributions .|> CuArray{Float64},
+        #= distributions = model.distributions .|> CuArray{Float64}, =#
+        distributions = CuArray(cat(model.distributions...; dims=model.spaceTime.dims+1)),
         massDensity = model.massDensity |> CuArray{Float64},
         fluidVelocity = [u[k] for u in model.fluidVelocity, k in 1:model.spaceTime.dims]|>CuArray{Float64},
     )
