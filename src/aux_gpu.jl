@@ -160,6 +160,86 @@ function vectorFieldDotVectorField_gpu(vField, wField)
     return output
 end
 
+function circshift2D_kernel(output, input, shift, rowsCols)
+    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
+    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
+
+    if i ≤ rowsCols[1] && j ≤ rowsCols[2]
+        new_i = mod1(i - shift[1], rowsCols[1])
+        new_j = mod1(j - shift[2], rowsCols[2])
+        if length(rowsCols) > 2
+            for k in 1:rowsCols[3]
+                output[i,j,k] = input[new_i, new_j, k]
+            end
+        else
+            output[i,j] = input[new_i, new_j]
+        end
+    end
+    return nothing
+end
+function circshift3D_kernel(output, input, shift, rowsCols)
+    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
+    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
+    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
+
+    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
+        new_i = mod1(i - shift[1], rowsCols[1])
+        new_j = mod1(j - shift[2], rowsCols[2])
+        new_k = mod1(k - shift[3], rowsCols[3])
+        if length(rowsCols) > 3
+            for l in 1:rowsCols[4]
+                output[i,j,k,l] = input[new_i, new_j, new_k, l]
+            end
+        else
+            output[i,j,k] = input[new_i, new_j, new_k]
+        end
+    end
+    return nothing
+end
+function circshift_gpu(input::CuArray, shift::CuArray)
+    rowsCols = input |> size
+    dims = shift |> length
+
+
+    output = similar(input)
+    threads, blocks = getThreadsAndBlocks(dims, rowsCols)
+
+    kernel = [circshift2D_kernel, circshift3D_kernel][dims-1]
+    @cuda threads=threads blocks=blocks kernel(output, input, shift, rowsCols)
+    return output
+end
+
+
+#= function circshift_kernel!(output, input, shift, rowsCols) =#
+#=     i = threadIdx().x + (blockIdx().x - 1) * blockDim().x =#
+#=     j = threadIdx().y + (blockIdx().y - 1) * blockDim().y =#
+#==#
+#=     if i ≤ rowsCols[1] && j ≤ rowsCols[2] =#
+#=         new_i = mod1(i - shift[1], rowCols[1]) =#
+#=         new_j = mod1(j - shift[2], rowCols[2]) =#
+#=         if length(rowsCols) > 2 =#
+#=             for k in 1:rowsCols[3] =#
+#=                 output[i,j,k] = input[new_i, new_j, k] =#
+#=             end =#
+#=         else =#
+#=             output[i,j] = input[new_i, new_j] =#
+#=         end =#
+#=     end =#
+#=     return nothing =#
+#= end =#
+#= function circshift_gpu(input::CuArray, shift::CuArray) =#
+#=     rowsCols = input |> size =#
+#=     dims = shift |> length =#
+#==#
+#==#
+#=     output = similar(input) =#
+#=     threads = (16, 16) =#
+#=     blocks = (cld(rowsCols[1], threads[1]), cld(rowsCols[2], threads[2])) =#
+#==#
+#=     @cuda threads=threads blocks=blocks circshift_kernel!(output, input, shift, rowsCols) =#
+#=     return output =#
+#= end =#
+
 #= ==========================================================================================
 =============================================================================================
 LBM@gpu aux

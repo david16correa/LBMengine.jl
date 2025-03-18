@@ -89,6 +89,15 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
             bulkVelocity(model, particle, model.spaceTime.X[id])
         for id in findall(particle.boundaryConditionsParams.solidRegion)]
     end
+
+    particle.gpuTmp = (;
+        #= distributions = model.distributions .|> CuArray{Float64}, =#
+        boundaryConditionsParams = (;
+            streamingInvasionRegions = particle.boundaryConditionsParams.streamingInvasionRegions |> M -> CuArray(cat(M...; dims = model.spaceTime.dims+1)),
+            solidRegion = particle.boundaryConditionsParams.solidRegion |> cu,
+        ),
+        nodeVelocity = [u[k] for u in particle.nodeVelocity, k in 1:model.spaceTime.dims]|>CuArray{Float64}
+    )
 end
 
 function moveParticles!(model::LBMmodel)

@@ -58,6 +58,8 @@ function addBead!(model::LBMmodel;
         [],
         momentumInput,
         angularMomentumInput,
+        (;),
+        (;),
     )
     append!(model.particles, [newBead]);
 
@@ -194,6 +196,8 @@ function addSquirmer!(model::LBMmodel;
         [],
         momentumInput,
         angularMomentumInput,
+        (;),
+        (;),
     )
     append!(model.particles, [newSquirmer]);
 
@@ -439,7 +443,11 @@ function modelInit(;
     if CUDA.functional()
         gpuImmutable = merge(gpuImmutable, (;
             cs = [velocity.c |> CuArray{Int8} for velocity in velocities],
-            forceDensity = [f[k] for f in forceDensity, k in 1:dims]|>CuArray{Float64}
+            forceDensity = [f[k] for f in forceDensity, k in 1:dims]|>CuArray{Float64},
+            boundaryConditionsParams = (;
+                streamingInvasionRegions = boundaryConditionsParams.streamingInvasionRegions .|> Array |> M -> CuArray(cat(M...; dims = dims+1)),
+                wallRegion = boundaryConditionsParams.wallRegion |> Array |> cu,
+            )
         ));
     end
 

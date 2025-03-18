@@ -24,6 +24,8 @@ mutable struct LBMparticle
     nodeVelocity::Array{Vector{Float64}}
     momentumInput::Vector
     angularMomentumInput::Union{Float64, Vector}
+    gpuImmutable::NamedTuple
+    gpuTmp::NamedTuple
 end
 
 mutable struct LBMmodel

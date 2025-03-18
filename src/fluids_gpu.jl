@@ -145,7 +145,137 @@ end
 #= function cbcBoundaries_gpu!(model::LBMmodel) =#
 #= end =#
 
+function tick_gpu!(model::LBMmodel)
+    # preliminary preparation
+    rowsCols = size(model.gpuTmp.distributions)
+    rang(id) = (((1:s for s in rowsCols[1:end-1]))..., id)
 
+    # collision (or relaxation)
+    collisionedDistributions = collisionStep_gpu(model);
+
+    # propagated distributions will be saved in a new vector
+    propagatedDistributions = CuArray{eltype(collisionedDistributions)}(undef, rowsCols);
+
+    # streaming (or propagation), with streaming invasion exchange
+    for id in eachindex(model.velocities)
+        # distributions are initially streamed
+        streamedDistribution = circshift_gpu(collisionedDistributions[rang(id)...], model.gpuImmutable.cs[id])
+        #= julia> @btime circshift(M, model.gpuImmutable.cs[2]|>collect|>Tuple) # this is the way =#
+
+        if :bounceBack in model.schemes
+            # the wall region, the invasion region of the fluid, and the conjugate of the fluid with opposite momentum are retrieved
+            wallRegion = model.gpuImmutable.boundaryConditionsParams.wallRegion;
+            conjugateId = model.boundaryConditionsParams.oppositeVectorId[id];
+            conjugateInvasionRegion = model.gpuImmutable.boundaryConditionsParams.streamingInvasionRegions[rang(conjugateId)...];
+
+            # the wall regions are imposed to vanish
+            streamedDistribution[wallRegion] .= 0;
+
+            # the boudnary nodes of all rigid moving particles are considered in the streaming invasion exchange step
+            if :ladd in model.schemes
+                for particle in model.particles
+                    wallRegion = wallRegion .|| particle.gpuTmp.boundaryConditionsParams.solidRegion
+                    conjugateInvasionRegion = conjugateInvasionRegion .|| particle.gpuTmp.boundaryConditionsParams.streamingInvasionRegions[rang(conjugateId)...]
+                end
+            end
+
+            # streaming invasion exchange step is performed
+            streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[rang(conjugateId)...][conjugateInvasionRegion]
+
+            # if any wall is moving, its momentum is transfered to the fluid
+            if :movingWalls in model.schemes
+                ci = model.velocities[id].c .* model.spaceTime.Δx_Δt
+                wi = model.velocities[id].w
+
+                uwdotci = circshift_gpu(model.boundaryConditionsParams.solidNodeVelocity, model.gpuImmutable.cs[id]) |> uw -> vectorFieldDotVector_gpu(uw,ci)
+                streamedDistribution[conjugateInvasionRegion] += (2 * wi * model.fluidParams.invC2_s) * model.massDensity[conjugateInvasionRegion] .* uwdotci[conjugateInvasionRegion]
+            end
+
+            # if any particle is moving, its momentum is exchanged with the fluid
+            if :ladd in model.schemes
+                ci = model.gpuImmutable.cs[id] .* model.spaceTime.Δx_Δt
+                wi = model.velocities[id].w
+                for particle in model.particles
+                    conjugateBoundaryNodes = particle.gpuTmp.boundaryConditionsParams.streamingInvasionRegions[rang(conjugateId)...]
+
+                    # if the fluid did not bump into the particle, then the entire scheme can be skipped
+                    sum(conjugateBoundaryNodes) == 0 && break
+
+                    # the solids momentum is transfered to the fluid
+                    uw = particle.gpuTmp.nodeVelocity + circshift_gpu(particle.gpuTmp.nodeVelocity, model.gpuImmutable.cs[id])
+                    uwdotci = vectorFieldDotVector_gpu(uw,ci)
+                    streamedDistribution[conjugateBoundaryNodes] += (2 * wi * model.fluidParams.invC2_s) * model.gpuTmp.massDensity[conjugateBoundaryNodes] .* uwdotci[conjugateBoundaryNodes]
+
+                    # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
+                    if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
+                        sumTerm = collisionedDistributions[rang(conjugateId)...][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
+                        particle.particleParams.coupleForces && (particle.momentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci |> Array)
+                        particle.particleParams.coupleTorques && (particle.angularMomentumInput[id] -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
+                            sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
+                        )|> Array)
+                    end
+                end
+            end
+        end
+
+        # the resulting propagation is appended to the propagated distributions
+        propagatedDistributions[rang(id)...] = streamedDistribution
+    end
+
+    # testing
+    return propagatedDistributions
+
+    # the distributions and time are updated
+    model.distributions = propagatedDistributions
+    model.time += model.spaceTime.Δt
+    model.tick += 1
+
+    # characteristic boundary conditions
+    :cbc in model.schemes && cbcBoundaries!(model)
+
+    # Finally, the hydrodynamic variables are updated
+    hydroVariablesUpdate!(model; useEquilibriumScheme = true);
+    # and particles are moved, if there are any
+    (:ladd in model.schemes || :psm in model.schemes) && (moveParticles!(model));
+end
+
+function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksSaved = :default)
+    verbose && (println("Threads.nthreads() = $(Threads.nthreads())"))
+
+    @assert any(x -> x == :default, [simulationTime, ticks]) "simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!"
+    if simulationTime == :default && ticks == :default
+        time = range(model.spaceTime.Δt, length = 100, step = model.spaceTime.Δt);
+    elseif ticks == :default
+        time = range(model.spaceTime.Δt, stop = simulationTime::Number, step = model.spaceTime.Δt);
+    else
+        time = range(model.spaceTime.Δt, length = ticks::Int64, step = model.spaceTime.Δt);
+    end
+
+    simulationTime = time[end];
+    ticks = length(time);
+
+    if :saveData in model.schemes
+        (ticksSaved == :default) && (ticksSaved = 100);
+        totalTicks = floor(simulationTime/model.spaceTime.Δt)
+        checkPoints = range(0, stop=totalTicks, length=ticksSaved) |> collect .|> round .|> Int64
+    end
+
+    verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
+
+    for t in time |> eachindex
+        tick!(model);
+        verbose && (t in outputTimes) && (print("\r t = $(round(model.time; digits = 2))"); flush(stdout))
+        if :saveData in model.schemes
+            (model.tick in checkPoints) && writeTrajectories(model)
+            # if there are particles in the system, their trajectories are stored as well;
+            # since storage is not an issue here, all ticks are saved
+            writeParticlesTrajectories(model)
+        end
+    end
+    print("\r");
+
+    return nothing
+end
 
 #= ==========================================================================================
 =============================================================================================
@@ -602,6 +732,9 @@ function tick!(model::LBMmodel)
         # the resulting propagation is appended to the propagated distributions
         propagatedDistributions[id] = streamedDistribution
     end
+
+    # testing
+    return propagatedDistributions
 
     # the distributions and time are updated
     model.distributions = propagatedDistributions
