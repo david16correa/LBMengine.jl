@@ -51,8 +51,10 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
     # the velocity and angular velocity are updated, and the particle is moved (this is not necessary in the initial setup)
     if !initialSetup
-        deltaP = particle.momentumInput |> sum
-        deltaL = particle.angularMomentumInput |> sum
+        deltaP, deltaL = particle.momentumInput, particle.angularMomentumInput
+        if !useGpu # if multithreading on the CPU, the inputs need to be summed
+            deltaP, deltaL = sum(deltaP), sum(deltaL)
+        end
         particle.velocity += particle.particleParams.inverseMass * deltaP
         particle.angularVelocity += particle.particleParams.inverseMomentOfInertia * deltaL
         # the particle will be moved only if the velocity is nonzero! (there are no methods for rotating particles)
@@ -62,21 +64,25 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     end
 
     # the inputs are reset
-    particle.momentumInput = particle.momentumInput .|> zero
-    particle.angularMomentumInput = particle.angularMomentumInput .|> zero
+    if useGpu
+        particle.momentumInput = particle.momentumInput |> zero
+        particle.angularMomentumInput = particle.angularMomentumInput |> zero
+    else
+        particle.momentumInput = particle.momentumInput .|> zero
+        particle.angularMomentumInput = particle.angularMomentumInput .|> zero
+    end
 
     # the projection of the particle onto the lattice is found, along with its boundary nodes (streaming invasion regions)
     if particleMoved
         # the particle discretisation on the lattice is updated
         solidRegion = [particle.particleParams.solidRegionGenerator(x - particle.position) for x in model.spaceTime.X]
         #= solidRegion != particle.boundaryConditionsParams.solidRegion && println("ups") =#
-        model.spaceTime.dims < 3 ? (solidRegion = sparse(solidRegion)) : (solidRegion = BitArray(solidRegion))
 
-        particle.boundaryConditionsParams = (; solidRegion);
+        particle.boundaryConditionsParams = (; solidRegion = solidRegion |> typeof(particle.boundaryConditionsParams.solidRegion));
 
         if :ladd in model.schemes
             # the new exterior boundary and streaming invasion regions are found
-            streamingInvasionRegions = bounceBackPrep(solidRegion, model.velocities; returnStreamingInvasionRegions = true)
+            streamingInvasionRegions = bounceBackPrep(particle.boundaryConditionsParams.solidRegion, model.velocities; returnStreamingInvasionRegions = true)
             particle.boundaryConditionsParams = merge(particle.boundaryConditionsParams, (; streamingInvasionRegions));
         end
 
@@ -84,20 +90,13 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
     # the solid velocity (momentum density / mass density) is found
     if nodeVelocityMustBeFound
-        particle.nodeVelocity = fill(fill(0., model.spaceTime.dims), size(particle.boundaryConditionsParams.solidRegion))
-        particle.nodeVelocity[particle.boundaryConditionsParams.solidRegion] = [
+        nodeVelocity = fill(fill(0., model.spaceTime.dims), size(solidRegion))
+        nodeVelocity[solidRegion] = [
             bulkVelocity(model, particle, model.spaceTime.X[id])
-        for id in findall(particle.boundaryConditionsParams.solidRegion)]
+        for id in findall(solidRegion)]
+        useGpu && (nodeVelocity = [u[k] for u in nodeVelocity, k in 1:model.spaceTime.dims]|>CuArray{Float64})
+        particle.nodeVelocity = nodeVelocity
     end
-
-    particle.gpuTmp = (;
-        #= distributions = model.distributions .|> CuArray{Float64}, =#
-        boundaryConditionsParams = (;
-            streamingInvasionRegions = particle.boundaryConditionsParams.streamingInvasionRegions |> M -> CuArray(cat(M...; dims = model.spaceTime.dims+1)),
-            solidRegion = particle.boundaryConditionsParams.solidRegion |> cu,
-        ),
-        nodeVelocity = [u[k] for u in particle.nodeVelocity, k in 1:model.spaceTime.dims]|>CuArray{Float64}
-    )
 end
 
 function moveParticles!(model::LBMmodel)

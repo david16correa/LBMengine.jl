@@ -41,25 +41,26 @@ function addBead!(model::LBMmodel;
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
 
-    # the momentum input is defined, and the inputs are turned into vectors to allow for multithreading
+    # the momentum input is defined
     momentumInput = fill(0., model.spaceTime.dims);
+    if !useGpu # if model is paralelized on the CPU, the inputs are turned into vectors to allow for multithreading
+        momentumInput = fill(momentumInput, length(model.velocities) + 1)
+        angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
+    end
 
-    momentumInput = fill(momentumInput, length(model.velocities) + 1)
-    angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
+    solidRegion = fill(false, size(model.massDensity)) |> (useGpu ? CuArray{Bool} : model.spaceTime.dims < 3 ? sparse : BitArray)
 
     # a new bead is defined and added to the model
     newBead = LBMparticle(
         length(model.particles) + 1,
         (;radius, inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), properties = [:spherical, :bead], coupleTorques, coupleForces),
-        (; solidRegion = [], streamingInvasionRegions = []),
+        (; solidRegion, streamingInvasionRegions = []),
         position,
         velocity,
         angularVelocity,
         [],
         momentumInput,
         angularMomentumInput,
-        (;),
-        (;),
     )
     append!(model.particles, [newBead]);
 
@@ -72,10 +73,8 @@ function addBead!(model::LBMmodel;
     append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
-        wallRegion = fill(false, size(model.massDensity))
-        (model.spaceTime.dims <= 2) ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
-        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
-        model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
+        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(solidRegion, model.velocities);
+        model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion = solidRegion, streamingInvasionRegions, oppositeVectorId));
         scheme == :ladd && (append!(model.schemes, [:bounceBack]))
     end
 
@@ -127,11 +126,12 @@ function addSquirmer!(model::LBMmodel;
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
 
-    # the momentum input is defined, and the inputs are turned into vectors to allow for multithreading
+    # the momentum input is defined
     momentumInput = fill(0., model.spaceTime.dims);
-
-    momentumInput = fill(momentumInput, length(model.velocities) + 1)
-    angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
+    if !useGpu # if model is paralelized on the CPU, the inputs are turned into vectors to allow for multithreading
+        momentumInput = fill(momentumInput, length(model.velocities) + 1)
+        angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
+    end
 
     # B1 and B2 are chosen
     @assert any(x -> x == :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
@@ -176,6 +176,8 @@ function addSquirmer!(model::LBMmodel;
         B2 *= slipSpeed/normFactor
     end
 
+    solidRegion = fill(false, size(model.massDensity)) |> (useGpu ? CuArray{Bool} : model.spaceTime.dims < 3 ? sparse : BitArray)
+
     # a new squirmer is defined and added to the model
     newSquirmer = LBMparticle(
         length(model.particles) + 1,
@@ -189,15 +191,13 @@ function addSquirmer!(model::LBMmodel;
             properties = [:spherical, :squirmer],
             coupleTorques,
             coupleForces), # particleParams
-        (; solidRegion = [], streamingInvasionRegions = []),
+        (; solidRegion, streamingInvasionRegions = []),
         position,
         velocity,
         angularVelocity,
         [],
         momentumInput,
         angularMomentumInput,
-        (;),
-        (;),
     )
     append!(model.particles, [newSquirmer]);
 
@@ -208,10 +208,8 @@ function addSquirmer!(model::LBMmodel;
     append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
     if !(:bounceBack in model.schemes)
-        wallRegion = fill(false, size(model.massDensity))
-        (model.spaceTime.dims <= 2) ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
-        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, model.velocities);
-        model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
+        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(solidRegion, model.velocities);
+        model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion = solidRegion, streamingInvasionRegions, oppositeVectorId));
         scheme == :ladd && (append!(model.schemes, [:bounceBack]))
     end
 
@@ -234,9 +232,15 @@ function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluid
         consistencyTerm[fluidIndices] = kwInitialConditions.forceDensity[fluidIndices] ./ massDensity[fluidIndices]
         u -= 0.5 * kwInitialConditions.Δt * consistencyTerm
     end
+
+    # these functions have different definitions depending on the harware (cpu vs gpu); I need strictly the cpu
+    # version in this specific scenario. I chose to make auxilary copies of them, as I don't mind the overhead
+    auxVectorFieldDotVector(F, v) = [dot(F, v) for F in F]
+    auxVectorFieldDotVectorField(V, W) = [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
+
     # the equilibrium distribution is found step by step and returned
-    firstStep = vectorFieldDotVector(u, ci) |> udotci -> udotci*fluidParams.invC2_s + udotci.^2 * (0.5 * fluidParams.invC4_s)
-    secondStep = firstStep - vectorFieldDotVectorField(u, u)*(0.5*fluidParams.invC2_s) .+ 1
+    firstStep = auxVectorFieldDotVector(u, ci) |> udotci -> udotci*fluidParams.invC2_s + udotci.^2 * (0.5 * fluidParams.invC4_s)
+    secondStep = firstStep - auxVectorFieldDotVectorField(u, u)*(0.5*fluidParams.invC2_s) .+ 1
     return secondStep .* (wi * massDensity)
 end
 
@@ -359,7 +363,7 @@ function modelInit(;
     append!(schemes, [collisionModel])
 
     #= -------------------- boundary conditions (bounce back) -------------------- =#
-    wallRegion = fill(false, size(massDensity))
+    wallRegion = fill(false, size(massDensity))|>BitArray
     if walledDimensions != :default && length(walledDimensions) != 0
         if dampenEcho
             append!(schemes, [:cbc])
@@ -368,25 +372,29 @@ function modelInit(;
             append!(schemes, [:bounceBack])
         end
 
-        boundaryConditionsParams = merge(boundaryConditionsParams, (; walledDimensions));
+        useGpu && (walledDimensions |> CuArray{Int8}; wallRegion = wallRegion |> CuArray{Bool}) # gpu acceleration
+        boundaryConditionsParams = merge(boundaryConditionsParams, (; walledDimensions = walledDimensions |> copy, wallRegion = wallRegion |> copy));
+        useGpu && (walledDimensions |> Array{Int8}; wallRegion = wallRegion |> Array |> BitArray) # gpu acceleration
     end
     if solidNodes != :default && size(solidNodes) == size(wallRegion)
         wallRegion = wallRegion .|| solidNodes
 
         append!(schemes, [:bounceBack])
     end
-    dims <= 2 ? (wallRegion = sparse(wallRegion)) : (wallRegion = BitArray(wallRegion))
 
     if :bounceBack in schemes || :trt in schemes
         massDensity[wallRegion] .= 0;
+        fluidVelocity[wallRegion] = zero.(fluidVelocity)[wallRegion];
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
-        boundaryConditionsParams = merge(boundaryConditionsParams, (; wallRegion, streamingInvasionRegions, oppositeVectorId));
+        :bounceBack in schemes && (boundaryConditionsParams = merge(boundaryConditionsParams, (; streamingInvasionRegions)));
+        :trt in schemes && (boundaryConditionsParams = merge(boundaryConditionsParams, (; oppositeVectorId)));
     end
 
     #= -------------------- boundary conditions (moving walls) ------------------- =#
     if solidNodeVelocity isa Array && solidNodeVelocity[1] isa Vector && size(solidNodeVelocity) == size(massDensity)
         maskedArray = fill(fill(0., dims), size(solidNodeVelocity))
         maskedArray[wallRegion] = solidNodeVelocity[wallRegion]
+        useGpu && (maskedArray = [m[k] for m in maskedArray, k in 1:dims] |> CuArray{Float64}) # gpu acceleration
         boundaryConditionsParams = merge(boundaryConditionsParams, (; solidNodeVelocity = maskedArray));
 
         append!(schemes, [:movingWalls])
@@ -398,7 +406,7 @@ function modelInit(;
 
     # by defualt, there is no force density
     if forceDensity == :default
-        forceDensity = [[0., 0]];
+        forceDensity = [fill(0., dims)];
     # if a single vector is defined it is assumed the force denisty is constant
     elseif forceDensity isa Vector && size(forceDensity) == size(fluidVelocity[1])
         forceDensity = fill(forceDensity |> Vector{Float64}, size(massDensity))
@@ -438,16 +446,16 @@ function modelInit(;
     end
 
     #= ---------------------------------- GPU acceleration ---------------------------------- =#
-    gpuImmutable = (;)
-    gpuTmp = (;)
-    if CUDA.functional()
-        gpuImmutable = merge(gpuImmutable, (;
-            cs = [velocity.c |> CuArray{Int8} for velocity in velocities],
-            forceDensity = [f[k] for f in forceDensity, k in 1:dims]|>CuArray{Float64},
-            boundaryConditionsParams = (;
-                streamingInvasionRegions = boundaryConditionsParams.streamingInvasionRegions .|> Array |> M -> CuArray(cat(M...; dims = dims+1)),
-                wallRegion = boundaryConditionsParams.wallRegion |> Array |> cu,
-            )
+    if useGpu
+        cs = [v.c|>CuArray{Int8} for v in velocities]
+        ws = [v.w for v in velocities]
+        velocities = (; cs, ws)
+        initialDistributions = CuArray(cat(initialDistributions...; dims=dims+1));
+        massDensity = massDensity |> CuArray{Float64};
+        fluidVelocity = [u[k] for u in fluidVelocity, k in 1:dims]|>CuArray{Float64};
+        forceDensity = [f[k] for f in forceDensity, k in 1:dims]|>CuArray{Float64};
+        spaceTime = merge(spaceTime, (;
+            X_d = [x[k] for x in spaceTime.X, k in 1:dims]|>CuArray{Float64}
         ));
     end
 
@@ -467,21 +475,19 @@ function modelInit(;
         boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
         []|>Vector{LBMparticle}, # initially there will be no particles
         unique(schemes),
-        gpuImmutable,
-        gpuTmp,
     );
 
     #= ---------------------------- consistency check ---------------------------- =#
     # to ensure consistency, ρ, ρu and u are all found using the initial conditions of f_i
     hydroVariablesUpdate!(model);
     # if either ρ or u changed, the user is notified
-    acceptableError = 0.01;
-    fluidRegion = wallRegion .|> b -> !b;
-    error_massDensity = model.massDensity[fluidRegion] - massDensity[fluidRegion] |> M -> abs.(M) |> maximum
-    error_fluidVelocity = model.fluidVelocity[fluidRegion] - fluidVelocity[fluidRegion] |> M -> norm.(M) |> maximum
-    if (error_massDensity > acceptableError) || (error_fluidVelocity > acceptableError)
-        @warn "the initial conditions for ρ and u could not be met. New ones were defined."
-    end
+    #= acceptableError = 0.01; =#
+    #= fluidRegion = wallRegion .|> b -> !b; =#
+    #= error_massDensity = model.massDensity - massDensity |> M -> abs.(M) |> maximum =#
+    #= error_fluidVelocity = model.fluidVelocity - fluidVelocity |> M -> norm.(M) |> maximum =#
+    #= if (error_massDensity > acceptableError) || (error_fluidVelocity > acceptableError) =#
+    #=     @warn "the initial conditions for ρ and u could not be met. New ones were defined." =#
+    #= end =#
 
     :saveData in model.schemes && writeTrajectories(model)
 

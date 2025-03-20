@@ -1,19 +1,21 @@
 module LBMengine
-    using SparseArrays, CUDA
-    using CairoMakie
-    using DataFrames, CSV, Dates
-    import LinearAlgebra.dot, LinearAlgebra.norm
+    using SparseArrays, CUDA # performance dependencies
+    using DataFrames, CSV, Dates # data dependencies
+    import LinearAlgebra.dot, LinearAlgebra.norm # numerical analysis dependencies
+    using CairoMakie # graphics dependencies
 
-    include("structs.jl");
-    include("aux.jl");
+    # Dynamically load GPU or CPU modules based on CUDA availability (launch julia with `BYPASS_GPU=true julia` to not use the gpu)
+    #= bypassGpu = (get(ENV, "BYPASS_GPU", "false") == "true") # this works only during precompilation; a different approach is necessary =#
+    bypassGpu = false
+    bypassGpu && (@info "GPU bypass enabled; running on CPU")
+    useGpu = (CUDA.functional() && !(bypassGpu))
+    hardwareModule = useGpu ? "gpu" : "cpu"
+    include("$hardwareModule/structs.jl");
+    include("$hardwareModule/aux.jl");
+    include("$hardwareModule/fluids.jl");
 
-    if CUDA.functional()
-        include("fluids_gpu.jl");
-        include("aux_gpu.jl");
-    else
-        include("fluids.jl");
-    end
-
+    # Load general module1s
+    include("misc.jl");
     include("initMethods.jl");
     include("particles.jl")
 
@@ -33,4 +35,4 @@ module LBMengine
 
     # extra methods - saving data
     export writeTensor
-end # module LBMengine
+end

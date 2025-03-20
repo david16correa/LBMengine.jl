@@ -24,8 +24,6 @@ mutable struct LBMparticle
     nodeVelocity::Array{Vector{Float64}}
     momentumInput::Vector
     angularMomentumInput::Union{Float64, Vector}
-    gpuImmutable::NamedTuple
-    gpuTmp::NamedTuple
 end
 
 mutable struct LBMmodel
@@ -43,8 +41,6 @@ mutable struct LBMmodel
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
     particles::Vector{LBMparticle}
     schemes::Vector{Symbol}
-    gpuImmutable::NamedTuple
-    gpuTmp::NamedTuple
     #= schemes implemented thus far:
         :bgk (collision model, stable),
         :trt (collision model, stable),
