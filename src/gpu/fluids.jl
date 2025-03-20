@@ -5,30 +5,25 @@ gpu accelerated LBM
 ========================================================================================== =#
 
 function massDensityGet(model::LBMmodel)
-    # sum will output an array of the same dimensions as its input; the last dimension of the
-    # input array corresponds to the auxiliary fluids, which makes it have one dimension more than
-    # the desired mass density. Rang solves this issue.
-    rang = (((1:s for s in size(model.distributions)[1:end-1]))..., 1)
-    return sum(model.distributions, dims=model.spaceTime.dims+1)[rang...]
+    return sum(model.distributions, dims=model.spaceTime.dims+1)[rang(model,1)...]
 end
 
 function momentumDensityGet(model::LBMmodel; useEquilibriumScheme = false)
     # en estep punto se dará por hecho que la fuerza es constante!!
-    rang(id) = (((1:s for s in size(model.distributions)[1:end-1]))..., id)
-    bareMomentum = [scalarFieldTimesVector(model.distributions[rang(id)...], model.velocities.cs[id]) for id in eachindex(model.velocities.cs)] |> sum
+    bareMomentum = [scalarFieldTimesVector(model.distributions[rang(model, id)...], model.velocities.cs[id]) for id in eachindex(model.velocities.cs)] |> sum
 
     if :guo in model.schemes
-        return CUDA.@. bareMomentum + 0.5 * model.spaceTime.Δt * model.forceDensity
+        return CUDA.@. bareMomentum + 0.5 * model.spaceTime.timeStep * model.forceDensity
     end
 
     if useEquilibriumScheme
         if :shan in model.schemes
-            return CUDA.@. bareMomentum + model.fluidParams.relaxationTime * model.spaceTime.Δt^2 * model.forceDensity
+            return CUDA.@. bareMomentum + model.fluidParams.relaxationTime * model.spaceTime.timeStep^2 * model.forceDensity
         end
     end
 
     if :shan in model.schemes
-        return CUDA.@. bareMomentum + 0.5 * model.spaceTime.Δt * model.forceDensity
+        return CUDA.@. bareMomentum + 0.5 * model.spaceTime.timeStep * model.forceDensity
     end
 
     return bareMomentum
@@ -44,7 +39,7 @@ end
 
 function equilibriumDistribution(id::Int64, model::LBMmodel)
     # the quantities to be used are saved separately
-    ci = model.velocities.cs[id] .* model.spaceTime.Δx_Δt
+    ci = model.velocities.cs[id] .* model.spaceTime.latticeSpeed
     wi = model.velocities.ws[id]
 
     u = model.fluidVelocity
@@ -58,39 +53,37 @@ function equilibriumDistribution(id::Int64, model::LBMmodel)
 end
 
 function nonEquilibriumDistribution(id::Int64, model::LBMmodel)
-    rang = (((1:s for s in size(model.distributions)[1:end-1]))..., id)
-    return model.distributions[rang...] - equilibriumDistribution(id, model)
+    return model.distributions[rang(model,id)...] - equilibriumDistribution(id, model)
 end
 
 function collisionStep(model::LBMmodel)
     # preliminary preparation
     rowsCols = size(model.distributions)
-    rang(id) = (((1:s for s in rowsCols[1:end-1]))..., id)
 
     # the equilibrium distributions are found
     equilibriumDistributions = CuArray{eltype(model.distributions)}(undef, rowsCols) # Output matrix
     for id in eachindex(model.velocities.cs)
-        equilibriumDistributions[rang(id)...] = equilibriumDistribution(id, model)
+        equilibriumDistributions[rang(model, id)...] = equilibriumDistribution(id, model)
     end
 
     # the collision operator is found
     if :bgk in model.schemes
         # the Bhatnagar-Gross-Krook collision opeartor is used
-        Omega = -model.spaceTime.Δt/model.fluidParams.relaxationTime * (model.distributions - equilibriumDistributions)
+        Omega = -model.spaceTime.timeStep/model.fluidParams.relaxationTime * (model.distributions - equilibriumDistributions)
     elseif :trt in model.schemes
         # the two-relaxation-time collision opeartor is used
         conjugateIds = model.boundaryConditionsParams.oppositeVectorId
 
-        conjugateDistributions = model.distributions[rang(conjugateIds)...]
+        conjugateDistributions = model.distributions[rang(model, conjugateIds)...]
         distributionsPlus = 0.5 * (model.distributions + conjugateDistributions)
         distributionsMinus = 0.5 * (model.distributions - conjugateDistributions)
 
-        conjugateDistributions = equilibriumDistributions[rang(conjugateIds)...]
+        conjugateDistributions = equilibriumDistributions[rang(model, conjugateIds)...]
         equilibriumDistributionsPlus = 0.5 * (equilibriumDistributions + conjugateDistributions)
         equilibriumDistributionsMinus = 0.5 * (equilibriumDistributions - conjugateDistributions)
 
-        OmegaPlus = -model.spaceTime.Δt/model.fluidParams.relaxationTimePlus * (distributionsPlus - equilibriumDistributionsPlus)
-        OmegaMinus = -model.spaceTime.Δt/model.fluidParams.relaxationTimeMinus * (distributionsMinus - equilibriumDistributionsMinus)
+        OmegaPlus = -model.spaceTime.timeStep/model.fluidParams.relaxationTimePlus * (distributionsPlus - equilibriumDistributionsPlus)
+        OmegaMinus = -model.spaceTime.timeStep/model.fluidParams.relaxationTimeMinus * (distributionsMinus - equilibriumDistributionsMinus)
 
         Omega = OmegaPlus + OmegaMinus
     end
@@ -98,7 +91,7 @@ function collisionStep(model::LBMmodel)
     # forcing terms are added
     if :guo in model.schemes
         for id in eachindex(model.velocities.cs)
-            Omega[rang(id)...] += guoForcingTerm(id, model)
+            Omega[rang(model, id)...] += guoForcingTerm(id, model)
         end
     end
 
@@ -110,27 +103,27 @@ end
 
 function guoForcingTerm(id::Int64, model::LBMmodel)
     # the quantities to be used are saved separately
-    ci = model.velocities.cs[id] .* model.spaceTime.Δx_Δt
+    ci = model.velocities.cs[id] .* model.spaceTime.latticeSpeed
     invC2_s = model.fluidParams.invC2_s
     wi = model.velocities.ws[id]
     U = model.fluidVelocity
     F = model.forceDensity
-    Δt = model.spaceTime.Δt
+    timeStep = model.spaceTime.timeStep
 
     # the forcing term is found (terms common for both collision methods are found first)
     secondTerm = vectorFieldDotVector(U, ci) |> udotci -> scalarFieldTimesVector(udotci, ci)*model.fluidParams.invC4_s
     if :bgk in model.schemes
         firstTerm = vectorFieldPlusVector(-U, ci) * invC2_s
         intermediateStep = vectorFieldDotVectorField(firstTerm + secondTerm, F)
-        return wi * Δt * (1 - Δt/(2 * model.fluidParams.relaxationTime)) * intermediateStep
+        return wi * timeStep * (1 - timeStep/(2 * model.fluidParams.relaxationTime)) * intermediateStep
     elseif :trt in model.schemes
         intermediateStep = vectorFieldDotVectorField(-U*invC2_s + secondTerm, F)
-        plusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimePlus)) * intermediateStep
+        plusPart = (1 - timeStep/(2 * model.fluidParams.relaxationTimePlus)) * intermediateStep
 
         intermediateStep = vectorFieldDotVector(F, ci*invC2_s)
-        minusPart = (1 - Δt/(2 * model.fluidParams.relaxationTimeMinus)) * intermediateStep
+        minusPart = (1 - timeStep/(2 * model.fluidParams.relaxationTimeMinus)) * intermediateStep
 
-        return wi * Δt * (plusPart + minusPart)
+        return wi * timeStep * (plusPart + minusPart)
     end
 end
 
@@ -140,7 +133,6 @@ end
 function tick!(model::LBMmodel)
     # preliminary preparation
     rowsCols = size(model.distributions)
-    rang(id) = (((1:s for s in rowsCols[1:end-1]))..., id)
 
     # collision (or relaxation)
     collisionedDistributions = collisionStep(model);
@@ -151,13 +143,13 @@ function tick!(model::LBMmodel)
     # streaming (or propagation), with streaming invasion exchange
     for id in eachindex(model.velocities.cs)
         # distributions are initially streamed
-        streamedDistribution = circshift_gpu(collisionedDistributions[rang(id)...], model.velocities.cs[id])
+        streamedDistribution = circshift_gpu(collisionedDistributions[rang(model, id)...], model.velocities.cs[id])
 
         if :bounceBack in model.schemes
             # the wall region, the invasion region of the fluid, and the conjugate of the fluid with opposite momentum are retrieved
             wallRegion = model.boundaryConditionsParams.wallRegion;
             conjugateId = model.boundaryConditionsParams.oppositeVectorId[id];
-            conjugateInvasionRegion = model.boundaryConditionsParams.streamingInvasionRegions[rang(conjugateId)...];
+            conjugateInvasionRegion = model.boundaryConditionsParams.streamingInvasionRegions[rang(model, conjugateId)...];
 
             # the wall regions are imposed to vanish
             streamedDistribution[wallRegion] .= 0;
@@ -166,16 +158,16 @@ function tick!(model::LBMmodel)
             if :ladd in model.schemes
                 for particle in model.particles
                     wallRegion = wallRegion .|| particle.boundaryConditionsParams.solidRegion
-                    conjugateInvasionRegion = conjugateInvasionRegion .|| particle.boundaryConditionsParams.streamingInvasionRegions[rang(conjugateId)...]
+                    conjugateInvasionRegion = conjugateInvasionRegion .|| particle.boundaryConditionsParams.streamingInvasionRegions[rang(model, conjugateId)...]
                 end
             end
 
             # streaming invasion exchange step is performed
-            streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[rang(conjugateId)...][conjugateInvasionRegion]
+            streamedDistribution[conjugateInvasionRegion] = collisionedDistributions[rang(model, conjugateId)...][conjugateInvasionRegion]
 
             # if any wall is moving, its momentum is transfered to the fluid
             if :movingWalls in model.schemes
-                ci = model.velocities.cs[id].c .* model.spaceTime.Δx_Δt
+                ci = model.velocities.cs[id].c .* model.spaceTime.latticeSpeed
                 wi = model.velocities.ws[id]
 
                 uwdotci = circshift_gpu(model.boundaryConditionsParams.solidNodeVelocity, model.velocities.cs[id]) |> uw -> vectorFieldDotVector(uw,ci)
@@ -184,10 +176,10 @@ function tick!(model::LBMmodel)
 
             # if any particle is moving, its momentum is exchanged with the fluid
             if :ladd in model.schemes
-                ci = model.velocities.cs[id] .* model.spaceTime.Δx_Δt
+                ci = model.velocities.cs[id] .* model.spaceTime.latticeSpeed
                 wi = model.velocities.ws[id]
                 for particle in model.particles
-                    conjugateBoundaryNodes = particle.boundaryConditionsParams.streamingInvasionRegions[rang(conjugateId)...]
+                    conjugateBoundaryNodes = particle.boundaryConditionsParams.streamingInvasionRegions[rang(model, conjugateId)...]
 
                     # if the fluid did not bump into the particle, then the entire scheme can be skipped
                     sum(conjugateBoundaryNodes) == 0 && break
@@ -199,7 +191,7 @@ function tick!(model::LBMmodel)
 
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
-                        sumTerm = collisionedDistributions[rang(conjugateId)...][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
+                        sumTerm = collisionedDistributions[rang(model, conjugateId)...][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
                         particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci |> Array)
                         particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
@@ -210,12 +202,12 @@ function tick!(model::LBMmodel)
         end
 
         # the resulting propagation is appended to the propagated distributions
-        propagatedDistributions[rang(id)...] = streamedDistribution
+        propagatedDistributions[rang(model, id)...] = streamedDistribution
     end
 
     # the distributions and time are updated
     model.distributions = propagatedDistributions
-    model.time += model.spaceTime.Δt
+    model.time += model.spaceTime.timeStep
     model.tick += 1
 
     # characteristic boundary conditions
@@ -232,11 +224,11 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     @assert any(x -> x == :default, [simulationTime, ticks]) "simulationTime and ticks cannot be simultaneously chosen, as the time step is defined already in the model!"
     if simulationTime == :default && ticks == :default
-        time = range(model.spaceTime.Δt, length = 100, step = model.spaceTime.Δt);
+        time = range(model.spaceTime.timeStep, length = 100, step = model.spaceTime.timeStep);
     elseif ticks == :default
-        time = range(model.spaceTime.Δt, stop = simulationTime::Number, step = model.spaceTime.Δt);
+        time = range(model.spaceTime.timeStep, stop = simulationTime::Number, step = model.spaceTime.timeStep);
     else
-        time = range(model.spaceTime.Δt, length = ticks::Int64, step = model.spaceTime.Δt);
+        time = range(model.spaceTime.timeStep, length = ticks::Int64, step = model.spaceTime.timeStep);
     end
 
     simulationTime = time[end];
@@ -244,7 +236,7 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
 
     if :saveData in model.schemes
         (ticksSaved == :default) && (ticksSaved = 100);
-        totalTicks = floor(simulationTime/model.spaceTime.Δt)
+        totalTicks = floor(simulationTime/model.spaceTime.timeStep)
         checkPoints = range(0, stop=totalTicks, length=ticksSaved) |> collect .|> round .|> Int64
     end
 
@@ -276,7 +268,7 @@ function viscousStressTensor(model)
     nonEquilibriumDistributions = [nonEquilibriumDistribution(id, model) for id in eachindex(model.velocities.cs)]
 
     # the (1 - Δt/2τ) factor is found beforehand
-    coeff = 1 - 0.5*model.spaceTime.Δt/model.fluidParams.relaxationTime
+    coeff = 1 - 0.5*model.spaceTime.timeStep/model.fluidParams.relaxationTime
 
     # the viscous stress tensor is returned
     return [

@@ -6,18 +6,17 @@ module LBMengine
 
     # Dynamically load GPU or CPU modules based on CUDA availability (launch julia with `BYPASS_GPU=true julia` to not use the gpu)
     #= bypassGpu = (get(ENV, "BYPASS_GPU", "false") == "true") # this works only during precompilation; a different approach is necessary =#
-    bypassGpu = false
+    bypassGpu = true
     bypassGpu && (@info "GPU bypass enabled; running on CPU")
     useGpu = (CUDA.functional() && !(bypassGpu))
     hardwareModule = useGpu ? "gpu" : "cpu"
+
     include("$hardwareModule/structs.jl");
     include("$hardwareModule/aux.jl");
     include("$hardwareModule/fluids.jl");
-
-    # Load general module1s
-    include("misc.jl");
-    include("initMethods.jl");
-    include("particles.jl")
+    include("$hardwareModule/misc.jl");
+    include("$hardwareModule/initMethods.jl");
+    include("$hardwareModule/particles.jl")
 
     # structs
     export LBMvelocity, LBMparticle, LBMdistributions, LBMmodel
