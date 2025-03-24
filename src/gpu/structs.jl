@@ -15,15 +15,15 @@ LBMdistributions = AbstractArray{Float64}
 
 # rigid moving particles
 mutable struct LBMparticle
-    id::Int64
+    id::UInt8
     particleParams::NamedTuple # mass^-1, momentOfInertia^-1, solidRegionGenerator, symmetries
     boundaryConditionsParams::NamedTuple
-    position::Vector{Float64}
-    velocity::Vector{Float64}
-    angularVelocity::Union{Float64, Vector{Float64}}
+    position::AbstractArray{Float64}
+    velocity::AbstractArray{Float64}
+    angularVelocity::Union{Float64, AbstractArray{Float64}}
     nodeVelocity::AbstractArray{Float64}
-    momentumInput::Vector
-    angularMomentumInput::Union{Float64, Vector}
+    momentumInput::AbstractArray{Float64}
+    angularMomentumInput::Union{Float64, AbstractArray{Float64}}
 end
 
 mutable struct LBMmodel

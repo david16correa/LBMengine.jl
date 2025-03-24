@@ -4,87 +4,87 @@ init methods
 =============================================================================================
 ========================================================================================== =#
 
-function addBead!(model::LBMmodel;
-    massDensity = 1.0,
-    radius = 0.1,
-    position = :default, # default: origin (actual value is dimensionality dependent)
-    velocity = :default, # default: static (actual value is dimensionality dependent)
-    angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
-    coupleTorques = false,
-    coupleForces = false,
-    scheme = :default # default: ladd
-)
-    # a local function for the general geometry of a centered bead (sphere) is defined
-    beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2
-
-    # the mass is found using the mass density
-    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.latticeParameter^model.spaceTime.dims
-
-    # position and velocity are defined if necessary
-    position == :default && (position = fill(0., model.spaceTime.dims))
-    velocity == :default && (velocity = fill(0., model.spaceTime.dims))
-    # the dimensions are checked
-    ((length(position) != length(velocity)) || (length(position) != model.spaceTime.dims)) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
-
-    # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
-    if model.spaceTime.dims == 2
-        momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
-        angularVelocity == :default && (angularVelocity = 0.)
-        angularMomentumInput = 0.
-        @assert (angularVelocity isa Number) "In two dimensions, angularVelocity must be a number!"
-    elseif model.spaceTime.dims == 3
-        momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
-        angularVelocity == :default && (angularVelocity = [0., 0, 0])
-        angularMomentumInput = [0., 0, 0]
-        @assert (angularVelocity isa Array) "In three dimensions, angularVelocity must be an array!"
-    else
-        error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
-    end
-
-    # the momentum input is defined
-    momentumInput = fill(0., model.spaceTime.dims);
-    if !useGpu # if model is paralelized on the CPU, the inputs are turned into vectors to allow for multithreading
-        momentumInput = fill(momentumInput, length(model.velocities) + 1)
-        angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
-    end
-
-    solidRegion = fill(false, size(model.massDensity)) |> (useGpu ? CuArray{Bool} : model.spaceTime.dims < 3 ? sparse : BitArray)
-
-    # a new bead is defined and added to the model
-    newBead = LBMparticle(
-        length(model.particles) + 1,
-        (;radius, inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), properties = [:spherical, :bead], coupleTorques, coupleForces),
-        (; solidRegion, streamingInvasionRegions = []),
-        position,
-        velocity,
-        angularVelocity,
-        [],
-        momentumInput,
-        angularMomentumInput,
-    )
-    append!(model.particles, [newBead]);
-
-    # the schemes of the model are managed
-    scheme == :default && (scheme = :ladd)
-    @assert (scheme == :psm || scheme == :ladd) "$(scheme) cannot be used as a particle-fluid collision scheme!"
-
-    @assert (newBead.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used"
-
-    append!(model.schemes, [scheme])
-    model.schemes = model.schemes |> unique
-    if !(:bounceBack in model.schemes)
-        streamingInvasionRegions, oppositeVectorId = bounceBackPrep(solidRegion, model.velocities);
-        model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion = solidRegion, streamingInvasionRegions, oppositeVectorId));
-        scheme == :ladd && (append!(model.schemes, [:bounceBack]))
-    end
-
-    moveParticles!(length(model.particles), model; initialSetup = true)
-
-    # saving data
-    :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model)
-
-    return nothing
-end
+#= function addBead!(model::LBMmodel; =#
+#=     massDensity = 1.0, =#
+#=     radius = 0.1, =#
+#=     position = :default, # default: origin (actual value is dimensionality dependent) =#
+#=     velocity = :default, # default: static (actual value is dimensionality dependent) =#
+#=     angularVelocity = :default, # default: static, (actual value is dimensionality dependent) =#
+#=     coupleTorques = false, =#
+#=     coupleForces = false, =#
+#=     scheme = :default # default: ladd =#
+#= ) =#
+#=     # a local function for the general geometry of a centered bead (sphere) is defined =#
+#=     beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2 =#
+#==#
+#=     # the mass is found using the mass density =#
+#=     mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.latticeParameter^model.spaceTime.dims =#
+#==#
+#=     # position and velocity are defined if necessary =#
+#=     position == :default && (position = fill(0., model.spaceTime.dims)) =#
+#=     velocity == :default && (velocity = fill(0., model.spaceTime.dims)) =#
+#=     # the dimensions are checked =#
+#=     ((length(position) != length(velocity)) || (length(position) != model.spaceTime.dims)) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)") =#
+#==#
+#=     # the moment of inertia, initial angular velocity, and angular momentum input are all initialized =#
+#=     if model.spaceTime.dims == 2 =#
+#=         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk =#
+#=         angularVelocity == :default && (angularVelocity = 0.) =#
+#=         angularMomentumInput = 0. =#
+#=         @assert (angularVelocity isa Number) "In two dimensions, angularVelocity must be a number!" =#
+#=     elseif model.spaceTime.dims == 3 =#
+#=         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere =#
+#=         angularVelocity == :default && (angularVelocity = [0., 0, 0]) =#
+#=         angularMomentumInput = [0., 0, 0] =#
+#=         @assert (angularVelocity isa Array) "In three dimensions, angularVelocity must be an array!" =#
+#=     else =#
+#=         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)") =#
+#=     end =#
+#==#
+#=     # the momentum input is defined =#
+#=     momentumInput = fill(0., model.spaceTime.dims); =#
+#=     if !useGpu # if model is paralelized on the CPU, the inputs are turned into vectors to allow for multithreading =#
+#=         momentumInput = fill(momentumInput, length(model.velocities) + 1) =#
+#=         angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1) =#
+#=     end =#
+#==#
+#=     solidRegion = fill(false, size(model.massDensity)) |> (useGpu ? CuArray{Bool} : model.spaceTime.dims < 3 ? sparse : BitArray) =#
+#==#
+#=     # a new bead is defined and added to the model =#
+#=     newBead = LBMparticle( =#
+#=         length(model.particles) + 1, =#
+#=         (;radius, inverseMass = 1/mass, inverseMomentOfInertia = 1/momentOfInertia, solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2), properties = [:spherical, :bead], coupleTorques, coupleForces), =#
+#=         (; solidRegion, streamingInvasionRegions = []), =#
+#=         position, =#
+#=         velocity, =#
+#=         angularVelocity, =#
+#=         [], =#
+#=         momentumInput, =#
+#=         angularMomentumInput, =#
+#=     ) =#
+#=     append!(model.particles, [newBead]); =#
+#==#
+#=     # the schemes of the model are managed =#
+#=     scheme == :default && (scheme = :ladd) =#
+#=     @assert (scheme == :psm || scheme == :ladd) "$(scheme) cannot be used as a particle-fluid collision scheme!" =#
+#==#
+#=     @assert (newBead.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used" =#
+#==#
+#=     append!(model.schemes, [scheme]) =#
+#=     model.schemes = model.schemes |> unique =#
+#=     if !(:bounceBack in model.schemes) =#
+#=         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(solidRegion, model.velocities); =#
+#=         model.boundaryConditionsParams = merge(model.boundaryConditionsParams, (; wallRegion = solidRegion, streamingInvasionRegions, oppositeVectorId)); =#
+#=         scheme == :ladd && (append!(model.schemes, [:bounceBack])) =#
+#=     end =#
+#==#
+#=     moveParticles!(length(model.particles), model; initialSetup = true) =#
+#==#
+#=     # saving data =#
+#=     :saveData in model.schemes && writeParticleTrajectory(model.particles[end], model) =#
+#==#
+#=     return nothing =#
+#= end =#
 
 function addSquirmer!(model::LBMmodel;
     massDensity = 1.0,
@@ -101,15 +101,12 @@ function addSquirmer!(model::LBMmodel;
     coupleForces = false,
     scheme = :default # default: ladd
 )
-    # a local function for the general geometry of a centered bead (sphere) is defined
-    beadGeometry(x::Vector; radius2 = 0.0625) = sum(x.^2) < radius2
-
     # the mass is found using the mass density
-    mass = massDensity * sum(beadGeometry.(model.spaceTime.X; radius2 = radius^2)) * model.spaceTime.latticeParameter^model.spaceTime.dims
+    mass = massDensity * sum(getSphere(radius, model.spaceTime.X)) * model.spaceTime.latticeParameter^model.spaceTime.dims
 
     # position and velocity are defined if necessary
-    position == :default && (position = fill(0., model.spaceTime.dims))
-    velocity == :default && (velocity = fill(0., model.spaceTime.dims))
+    position == :default ? (position = CUDA.fill(0., model.spaceTime.dims)) : (position = position |> CuArray{Float64})
+    velocity == :default ? (velocity = CUDA.fill(0., model.spaceTime.dims)) : (velocity = velocity |> CuArray{Float64})
     # the dimensions are checked
     ((length(position) != length(velocity)) || (length(position) != model.spaceTime.dims)) && error("The position and velocity dimensions must match the dimensionality of the model! dims = $(model.spaceTime.dims)")
 
@@ -118,20 +115,14 @@ function addSquirmer!(model::LBMmodel;
         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
         angularMomentumInput = 0.
         angularVelocity = 0.
-    elseif model.spaceTime.dims == 3
-        momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
-        angularMomentumInput = [0., 0, 0]
-        angularVelocity = [0., 0, 0]
     else
-        error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
+        momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
+        angularMomentumInput = [0., 0, 0] |> CuArray{Float64}
+        angularVelocity = [0., 0, 0] |> CuArray{Float64}
     end
 
     # the momentum input is defined
-    momentumInput = fill(0., model.spaceTime.dims);
-    if !useGpu # if model is paralelized on the CPU, the inputs are turned into vectors to allow for multithreading
-        momentumInput = fill(momentumInput, length(model.velocities) + 1)
-        angularMomentumInput = fill(angularMomentumInput, length(model.velocities) + 1)
-    end
+    momentumInput = CUDA.fill(0., model.spaceTime.dims);
 
     # B1 and B2 are chosen
     @assert any(x -> x == :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
@@ -158,7 +149,7 @@ function addSquirmer!(model::LBMmodel;
     end
     @assert length(swimmingDirection) == model.spaceTime.dims  "the swimming direction must be $(dims)-dimensional!"
     # the swimming direction is normalized
-    swimmingDirection = swimmingDirection |> v -> v/norm(v)
+    swimmingDirection = swimmingDirection |> v -> v/norm(v) |> CuArray{Float64}
 
     # B1 and B2 are rescaled to ensure either the slip speed or swimming speed is satisfied
     @assert any(x -> x == :default, [slipSpeed, swimmingSpeed]) "slipSpeed and swimmingSpeed cannot be all simultaneously defined!"
@@ -176,21 +167,24 @@ function addSquirmer!(model::LBMmodel;
         B2 *= slipSpeed/normFactor
     end
 
-    solidRegion = fill(false, size(model.massDensity)) |> (useGpu ? CuArray{Bool} : model.spaceTime.dims < 3 ? sparse : BitArray)
+    solidRegion = fillCuArray(false, size(model.massDensity))
+
+    particleParams = (; 
+        radius,
+        B1,
+        B2,
+        swimmingDirection,
+        inverseMass = 1/mass,
+        inverseMomentOfInertia = 1/momentOfInertia,
+        properties = [:spherical, :squirmer],
+        coupleTorques,
+        coupleForces
+    )
 
     # a new squirmer is defined and added to the model
     newSquirmer = LBMparticle(
         length(model.particles) + 1,
-        (;  radius,
-            B1,
-            B2,
-            swimmingDirection,
-            inverseMass = 1/mass,
-            inverseMomentOfInertia = 1/momentOfInertia,
-            solidRegionGenerator = x -> beadGeometry(x; radius2 = radius^2),
-            properties = [:spherical, :squirmer],
-            coupleTorques,
-            coupleForces), # particleParams
+        particleParams, # particleParams
         (; solidRegion, streamingInvasionRegions = []),
         position,
         velocity,
@@ -204,6 +198,7 @@ function addSquirmer!(model::LBMmodel;
     # the schemes of the model are managed
     scheme == :default && (scheme = :ladd)
     @assert (scheme == :psm || scheme == :ladd) "$(scheme) cannot be used as a particle-fluid collision scheme!"
+    @assert (scheme == :ladd) "$scheme is not implemented in the gpu modules!"
     @assert (newSquirmer.id == 1 || scheme in model.schemes) "$(scheme) cannot be used, as another scheme for particle-fluid collision is being used"
     append!(model.schemes, [scheme])
     model.schemes = model.schemes |> unique
@@ -329,7 +324,7 @@ function modelInit(;
     if velocities == :default
         # if dimensions are too large, and the user did not define a velocity set, then there's an error
         @assert (dims > 1) "1 dimensional LBM is not implemented in CUDA!"
-        @assert (dims <= 3) "for dimensions higher than 3 a velocity set must be defined using a Vector{LBMvelocity}! modelInit(...; velocities = yourInput)"
+        @assert (dims <= 3) "for dimensions higher than 3 a velocity set must be defined using a NamedTuple! modelInit(...; velocities = (; cs::Vector{Vector{Int8}}, ws::Vector{Float64})"
         velocities = [:D1Q3, D2Q9, D3Q15, D3Q19, D3Q27][dims]
     else
         id = findfirst(set -> set == velocities, [:D1Q3, :D2Q9, :D3Q15, :D3Q19, :D3Q27])

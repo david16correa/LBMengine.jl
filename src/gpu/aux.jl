@@ -20,38 +20,7 @@ function getThreadsAndBlocks(dims, blockSizes)
     return threads, blocks
 end
 
-function fillCuArray_3D(output, val::Number, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        if length(rowsCols) > 3
-            for l in 1:rowsCols[4]
-                @inbounds output[i,j,k,l] = val
-            end
-        else
-            @inbounds output[i,j,k] = val
-        end
-    end
-    return nothing
-end
-function fillCuArray_2D(output, val::Number, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        if length(rowsCols) > 2
-            for k in 1:rowsCols[3]
-                @inbounds output[i,j,k] = val
-            end
-        else
-            @inbounds output[i,j] = val
-        end
-    end
-    return nothing
-end
-function fillCuArray(val::Number, rowsCols; order = 1)
+function fillCuArray(val::Number, rowsCols::Tuple; order = 1)
     if order == 1
         dims = length(rowsCols)
     else
@@ -61,34 +30,11 @@ function fillCuArray(val::Number, rowsCols; order = 1)
     output = CuArray{typeof(val)}(undef, rowsCols) # Output matrix
     threads, blocks = getThreadsAndBlocks(dims, rowsCols)
     #
-    kernel = [fillCuArray_2D, fillCuArray_3D][dims-1]
+    kernel = [fillCuArray2D_kernel, fillCuArray3D_kernel][dims-1]
     @cuda threads=threads blocks=blocks kernel(output, val, rowsCols)
     return output
 end
-function fillCuArray3D_kernel(output, val::AbstractArray, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        for l in 1:rowsCols[4]
-            @inbounds output[i,j,k,l] = val[k]
-        end
-    end
-    return nothing
-end
-function fillCuArray2D_kernel(output, val::AbstractArray, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        for k in 1:rowsCols[3]
-            @inbounds output[i,j,k] = val[k]
-        end
-    end
-    return nothing
-end
-function fillCuArray(val::Array, rowsCols)
+function fillCuArray(val::Array, rowsCols::Tuple)
     rowsCols = (rowsCols..., length(val))
     dims = length(rowsCols) - 1
     output = CuArray{eltype(val)}(undef, rowsCols) # Output matrix
@@ -99,78 +45,17 @@ function fillCuArray(val::Array, rowsCols)
     return output
 end
 
-function coordinatesCuArray3D_kernel(output, coordinates, rowsCols, dims)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        for l in 1:dims
-            if l == 1
-                @inbounds output[i,j,k,l] = coordinates[l][i]
-            elseif l == 2
-                @inbounds output[i,j,k,l] = coordinates[l][j]
-            else
-                @inbounds output[i,j,k,l] = coordinates[l][k]
-            end
-        end
-    end
-    return nothing
-end
-function coordinatesCuArray2D_kernel(output, coordinates, rowsCols, dims)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        for k in 1:dims
-            if k == 1
-                @inbounds output[i,j,k] = coordinates[k][i]
-            else
-                @inbounds output[i,j,k] = coordinates[k][j]
-            end
-        end
-    end
-    return nothing
-end
 function coordinatesCuArray(coordinates::Tuple)
     rowsCols = length.(coordinates)
     dims = length(coordinates)
     output = CuArray{eltype(coordinates[1])}(undef, (rowsCols..., dims)) # Output matrix
     threads, blocks = getThreadsAndBlocks(dims, rowsCols)
 
-    #= println("rowsCols: $rowsCols") =#
-    #= println("Threads: ", threads) =#
-    #= println("Blocks: ", blocks) =#
-    #
     kernel = [coordinatesCuArray2D_kernel, coordinatesCuArray3D_kernel][dims-1]
     @cuda threads=threads blocks=blocks kernel(output, coordinates, rowsCols, dims)
     return output
 end
 
-
-function vectorBitId3D_kernel(output, bitId, rowsCols, dims)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        for l in 1:dims
-            @inbounds output[i,j,k,l] = bitId[i,j,l]
-        end
-    end
-    return nothing
-end
-function vectorBitId2D_kernel(output, bitId, rowsCols, dims)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        for k in 1:dims
-            @inbounds output[i,j,k] = bitId[i,j]
-        end
-    end
-    return nothing
-end
 function vectorBitId(bitId)
     rowsCols = size(bitId)
     dims = length(rowsCols)
@@ -183,29 +68,6 @@ function vectorBitId(bitId)
     return output
 end
 
-function scalarFieldTimesVector2D_kernel(output, scalarField, vector, N, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        for k in 1:N
-            @inbounds output[i,j,k] = scalarField[i,j] * vector[k]
-        end
-    end
-    return nothing
-end
-function scalarFieldTimesVector3D_kernel(output, scalarField, vector, N, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        for l in 1:N
-            @inbounds output[i,j,k,l] = scalarField[i,j,k] * vector[l]
-        end
-    end
-    return nothing
-end
 function scalarFieldTimesVector(scalarField, vector)
     N = length(vector)
     rowsCols = scalarField |> size
@@ -218,29 +80,17 @@ function scalarFieldTimesVector(scalarField, vector)
     return output
 end
 
-function vectorFieldPlusVector2D_kernel(output, vector, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
+function scalarFieldTimesVectorField(scalarField, vectorField)
+    rowsCols = vectorField |> size
+    dims = rowsCols |> length |> x -> x - 1 # for a vector field, the array will have one more dimension that the problem!
+    output = CuArray{eltype(scalarField)}(undef, rowsCols) # Output matrix
+    threads, blocks = getThreadsAndBlocks(dims, rowsCols)
     #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        for k in 1:rowsCols[3]
-            @inbounds output[i,j,k] += vector[k]
-        end
-    end
-    return nothing
+    kernel = [scalarFieldTimesVectorField2D_kernel, scalarFieldTimesVectorField2D_kernel][dims-1]
+    @cuda threads=threads blocks=blocks kernel(output, scalarField, vectorField, rowsCols)
+    return output
 end
-function vectorFieldPlusVector3D_kernel(output, vector, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        for l in 1:rowsCols[4]
-            @inbounds output[i,j,k,l] += vector[l]
-        end
-    end
-    return nothing
-end
+
 function vectorFieldPlusVector(vectorField, vector)
     rowsCols = vectorField |> size
     dims = vector |> length
@@ -252,33 +102,6 @@ function vectorFieldPlusVector(vectorField, vector)
     return output
 end
 
-function vectorFieldDotVector2D_kernel(output, vectorField, vector, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        sumTerm = zero(eltype(output))
-        for k in 1:rowsCols[3]
-            @inbounds sumTerm += vectorField[i,j,k] * vector[k]
-        end
-        @inbounds output[i,j] = sumTerm
-    end
-    return nothing
-end
-function vectorFieldDotVector3D_kernel(output, vectorField, vector, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        sumTerm = zero(eltype(output))
-        for l in 1:rowsCols[4]
-            @inbounds sumTerm += vectorField[i,j,k,l] * vector[l]
-        end
-        @inbounds output[i,j,k] = sumTerm
-    end
-    return nothing
-end
 function vectorFieldDotVector(vectorField, vector)
     rowsCols = size(vectorField)
     dims = length(vector)
@@ -290,33 +113,6 @@ function vectorFieldDotVector(vectorField, vector)
     return output
 end
 
-function vectorFieldDotVectorField2D_kernel(output, vField, wField, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        sumTerm = zero(eltype(output))
-        for k in 1:rowsCols[3]
-            @inbounds sumTerm += vField[i,j,k] * wField[i,j,k]
-        end
-        @inbounds output[i,j] = sumTerm
-    end
-    return nothing
-end
-function vectorFieldDotVectorField3D_kernel(output, vField, wField, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        sumTerm = zero(eltype(output))
-        for l in 1:rowsCols[4]
-            @inbounds sumTerm += vField[i,j,k,l] * wField[i,j,k,l]
-        end
-        @inbounds output[i,j,k] = sumTerm
-    end
-    return nothing
-end
 function vectorFieldDotVectorField(vField, wField)
     rowsCols = vField |> size
     dims = rowsCols |> length |> x -> x - 1 # for a vector field, the array will have one more dimension that the problem!
@@ -328,42 +124,6 @@ function vectorFieldDotVectorField(vField, wField)
     return output
 end
 
-function circshift2D_kernel(output, input, shift, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-
-    if i ≤ rowsCols[1] && j ≤ rowsCols[2]
-        new_i = mod1(i - shift[1], rowsCols[1])
-        new_j = mod1(j - shift[2], rowsCols[2])
-        if length(rowsCols) > 2
-            for k in 1:rowsCols[3]
-                @inbounds output[i,j,k] = input[new_i, new_j, k]
-            end
-        else
-            @inbounds output[i,j] = input[new_i, new_j]
-        end
-    end
-    return nothing
-end
-function circshift3D_kernel(output, input, shift, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        new_i = mod1(i - shift[1], rowsCols[1])
-        new_j = mod1(j - shift[2], rowsCols[2])
-        new_k = mod1(k - shift[3], rowsCols[3])
-        if length(rowsCols) > 3
-            for l in 1:rowsCols[4]
-                @inbounds output[i,j,k,l] = input[new_i, new_j, new_k, l]
-            end
-        else
-            @inbounds output[i,j,k] = input[new_i, new_j, new_k]
-        end
-    end
-    return nothing
-end
 function circshift_gpu(input::CuArray, shift::CuArray)
     rowsCols = input |> size
     dims = shift |> length
@@ -398,37 +158,6 @@ LBM@gpu aux
 =============================================================================================
 ========================================================================================== =#
 
-function findFluidVelocity2D_kernel(fluidVelocity, massDensity, momentumDensity, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    rows, cols, depth = size(fluidVelocity)
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        for k in 1:rowsCols[3]  # Iterate over the small depth dimension
-            if !(massDensity[i, j] ≈ 0)
-                fluidVelocity[i, j, k] = momentumDensity[i, j, k] / massDensity[i, j]
-            end
-        end
-    end
-    return nothing
-end
-function findFluidVelocity3D_kernel(fluidVelocity, massDensity, momentumDensity, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    rows, cols, depth = size(fluidVelocity)
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        for l in 1:rowsCols[4]  # Iterate over the small depth dimension
-            if !(massDensity[i,j,k] ≈ 0)
-                fluidVelocity[i,j,k,l] = momentumDensity[i,j,k,l] / massDensity[i,j,k]
-            end
-        end
-    end
-    return nothing
-end
 function findFluidVelocity(massDensity, momentumDensity)
     rowsCols = size(momentumDensity)
     dims = rowsCols |> length |> x -> x - 1 # for a vector field, the array will have one more dimension that the problem!
@@ -458,6 +187,69 @@ function bounceBackPrep(wallRegion::CuArray{Bool}, velocities::NamedTuple; retur
     oppositeVectorId = [findfirst(x -> x == -1 .* c, cs) for c in cs]
 
     return streamingInvasionRegions, oppositeVectorId
+end
+
+#= ==========================================================================================
+=============================================================================================
+particles@gpu aux
+=============================================================================================
+========================================================================================== =#
+
+function getSphere(radius::Number, R::CuArray)
+    rowsCols, dims = size(R) |> sizeR -> (sizeR, sizeR |> length |> x -> x - 1) # for a vector field, the array will have one more dimension that the problem!
+    output = CuArray{Bool}(undef, rowsCols[1:dims]) # Output matrix
+    #
+    threads, blocks = getThreadsAndBlocks(dims, rowsCols)
+    #
+    kernel = [getSphere2D_kernel, getSphere3D_kernel][dims-1]
+    @cuda threads=threads blocks=blocks kernel(output, radius^2, R, rowsCols)
+    return output
+end
+
+function getSolidNodes(solidRegionGenerator::Function, R::CuArray)
+    rowsCols, dims = size(R) |> sizeR -> (sizeR, sizeR |> length |> x -> x - 1) # for a vector field, the array will have one more dimension that the problem!
+    output = CuArray{Bool}(undef, rowsCols[1:dims]) # Output matrix
+    #
+    threads, blocks = getThreadsAndBlocks(dims, rowsCols)
+    #
+    kernel = [getSolidNodes2D_kernel, getSolidNodes3D_kernel][dims-1]
+    @cuda threads=threads blocks=blocks kernel(output, solidRegionGenerator, R, rowsCols)
+    return output
+end
+
+# for ladd only the shell around the solid is needed; surely I can find a way to skip the unnecessary nodes and speedup things
+function getNodeVelocity(model::LBMmodel; id = 1)
+    xMinusR = vectorFieldPlusVector(model.spaceTime.X, -model.particles[id].position)
+    xMinusR_norm = vectorFieldDotVectorField(xMinusR, xMinusR) .|> sqrt
+    xMinusR_norm .= ifelse.(xMinusR_norm .== 0, 1, xMinusR_norm)
+
+
+    rowsCols, dims = size(xMinusR_norm) |> sizeM -> (sizeM, length(sizeM)) # for a vector field, the array will have one more dimension that the problem!
+    bulkV = CuArray{eltype(model.fluidVelocity)}(undef, (rowsCols..., dims)) # Output matrix
+    #
+    threads, blocks = getThreadsAndBlocks(dims, rowsCols)
+    #
+    kernel = [getBulkV2D_kernel, getBulkV3D_kernel][dims-1]
+    @cuda threads=threads blocks=blocks kernel(
+        bulkV,
+        model.particles[id].velocity,
+        model.particles[id].angularVelocity,
+        xMinusR,
+        xMinusR_norm,
+        model.particles[id].particleParams.radius,
+        model.spaceTime.latticeParameter,
+        rowsCols
+    )
+
+    (:bead in model.particles[id].particleParams.properties) && (return bulkV)
+
+    fancyR = xMinusR ./ xMinusR_norm
+    e_dot_fancyR = vectorFieldDotVector(fancyR, model.particles[id].particleParams.swimmingDirection)
+
+    firstTerm = model.particles[id].particleParams.B1 .+ model.particles[id].particleParams.B2 * e_dot_fancyR
+    secondTerm = scalarFieldTimesVectorField(e_dot_fancyR, fancyR) |> vF -> vectorFieldPlusVector(vF, -model.particles[id].particleParams.swimmingDirection)
+
+    return scalarFieldTimesVectorField(firstTerm, secondTerm) + bulkV
 end
 
 #= ==========================================================================================

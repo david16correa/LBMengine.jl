@@ -78,7 +78,7 @@ function plotFluidVelocity(model::LBMmodel;
 
     t = model.time
 
-    fluidVelocity = model.fluidVelocity
+    fluidVelocity = model.fluidVelocity |> Array |> U -> [U[i,j,:] for i in 1:size(U,1), j in 1:size(U,2)];
 
     if maximumFluidSpeed == :default
         maximumFluidSpeed = (model.fluidVelocity .|> norm) |> maximum
@@ -138,7 +138,7 @@ function plotMomentumDensity(model::LBMmodel;
 
     t = model.time
 
-    momentumDensity = model.momentumDensity
+    momentumDensity = model.momentumDensity |> Array |> U -> [U[i,j,:] for i in 1:size(U,1), j in 1:size(U,2)];
 
     if maximumMomentumDensity == :default
         maximumMomentumDensity = (model.momentumDensity .|> norm) |> maximum
@@ -200,18 +200,21 @@ function plotMassDensity(model::LBMmodel;
 
     t = model.time
 
-    massDensity = model.massDensity
+    massDensity = model.massDensity |> Array
 
     if maximumMassDensity == :default
         maximumMassDensity = massDensity |> maximum
     end
 
     if minimumMassDensity == :default
-        minimumMassDensity = massDensity[model.boundaryConditionsParams.wallRegion .|> b -> !b] |> minimum |> x -> maximum([0, x])
+        try
+            minimumMassDensity = massDensity[model.boundaryConditionsParams.wallRegion |> Array .|> b -> !b] |> minimum |> x -> maximum([0, x])
+        catch
+            minimumMassDensity = massDensity |> minimum
+        end
     end
 
-    minimumMassDensity ≈ maximumMassDensity && (minimumMassDensity = 0);
-    maximumMassDensity ≈ minimumMassDensity && (maximumMassDensity = 1);
+    minimumMassDensity ≈ maximumMassDensity && (minimumMassDensity = 0; maximumMassDensity = 1);
 
     #----------------------------------heatmap and colorbar---------------------------------
     fig, ax, hm = heatmap(model.spaceTime.coordinates[1], model.spaceTime.coordinates[2], massDensity,

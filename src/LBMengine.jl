@@ -18,6 +18,10 @@ module LBMengine
     include("$hardwareModule/initMethods.jl");
     include("$hardwareModule/particles.jl")
 
+    if useGpu
+        include("$hardwareModule/kernels.jl")
+    end
+
     # structs
     export LBMvelocity, LBMparticle, LBMdistributions, LBMmodel
 
