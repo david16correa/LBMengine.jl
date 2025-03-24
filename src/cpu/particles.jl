@@ -22,7 +22,7 @@ function bulkVelocity(model::LBMmodel, particle::LBMparticle, X::Vector)
     xMinusR_norm = xMinusR |> norm
 
     # for a spherical particle, the ladd scheme only needs the nodes closest to the interphase!
-    (:bead in particle.particleParams.properties) && :ladd in model.schemes && (abs(xMinusR_norm - particle.particleParams.radius) > model.spaceTime.latticeParameter) && return zero(particle.position)
+    (:spherical in particle.particleParams.properties) && :ladd in model.schemes && (abs(xMinusR_norm - particle.particleParams.radius) > 2*model.spaceTime.latticeParameter) && return zero(particle.position)
 
     bulkV = particle.velocity + cross(particle.angularVelocity, xMinusR)
 
