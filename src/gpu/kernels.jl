@@ -49,7 +49,7 @@ function fillCuArray3D_kernel(output, val::AbstractArray, rowsCols)
     #
     if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
         for l in 1:rowsCols[4]
-            @inbounds output[i,j,k,l] = val[k]
+            @inbounds output[i,j,k,l] = val[l]
         end
     end
     return nothing
@@ -107,7 +107,7 @@ function vectorBitId3D_kernel(output, bitId, rowsCols, dims)
     #
     if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
         for l in 1:dims
-            @inbounds output[i,j,k,l] = bitId[i,j,l]
+            @inbounds output[i,j,k,l] = bitId[i,j,k]
         end
     end
     return nothing
@@ -255,7 +255,7 @@ end
 function circshift2D_kernel(output, input, shift, rowsCols)
     i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
     j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-
+    #
     if i ≤ rowsCols[1] && j ≤ rowsCols[2]
         new_i = mod1(i - shift[1], rowsCols[1])
         new_j = mod1(j - shift[2], rowsCols[2])
@@ -273,7 +273,7 @@ function circshift3D_kernel(output, input, shift, rowsCols)
     i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
     j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
     k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-
+    #
     if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
         new_i = mod1(i - shift[1], rowsCols[1])
         new_j = mod1(j - shift[2], rowsCols[2])
@@ -338,7 +338,7 @@ function getSphere2D_kernel(output, radius2, R, rowsCols)
     j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
     #
     if i <= rowsCols[1] && j <= rowsCols[2]
-        output[i,j] = R[i]^2 + R[j]^2 < radius2
+        output[i,j] = R[i,j,1]^2 + R[i,j,2]^2 < radius2
     end
     return nothing
 end
@@ -348,7 +348,7 @@ function getSphere3D_kernel(output, radius2, R, rowsCols)
     k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
     #
     if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        output[i,j,k] = R[i]^2 + R[j]^2 + R[k]^2 < radius2
+        output[i,j,k] = R[i,j,k,1]^2 + R[i,j,k,2]^2 + R[i,j,k,3]^2 < radius2
     end
     return nothing
 end
@@ -359,7 +359,7 @@ function getSolidNodes2D_kernel(output, solidRegionGenerator, R, rowsCols)
     j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
     #
     if i <= rowsCols[1] && j <= rowsCols[2]
-        output[i,j] = solidRegionGenerator((R[i], R[j]))
+        output[i,j] = solidRegionGenerator((R[i,j,1], R[i,j,2]))
     end
     return nothing
 end
@@ -369,37 +369,10 @@ function getSolidNodes3D_kernel(output, solidRegionGenerator, R, rowsCols)
     k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
     #
     if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        output[i,j,k] = solidRegionGenerator((R[i], R[j], R[k]))
+        output[i,j,k] = solidRegionGenerator((R[i,j,k,1], R[i,j,k,2], R[i,j,k,3]))
     end
     return nothing
 end
-
-function getNodeVelocity2D_kernel(output, particleKws, X, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2]
-        vel = bulkVelocity(particleKws..., (X[i,j,1], X[i,j,2]));
-        return nothing
-        output[i,j,1] = vel[1];
-        output[i,j,2] = vel[2];
-    end
-    return nothing
-end
-function getNodeVelocity3D_kernel(output, particleKws, X, rowsCols)
-    i = threadIdx().x + (blockIdx().x - 1) * blockDim().x
-    j = threadIdx().y + (blockIdx().y - 1) * blockDim().y
-    k = threadIdx().z + (blockIdx().z - 1) * blockDim().z
-    #
-    if i <= rowsCols[1] && j <= rowsCols[2] && k <= rowsCols[3]
-        vel = bulkVelocity(particleKws..., [X[i,j,k,1], X[i,j,k,2], X[i,j,k,3]]);
-        output[i,j,1] = vel[1];
-        output[i,j,2] = vel[2];
-        output[i,j,3] = vel[3];
-    end
-    return nothing
-end
-
 
 function getBulkV2D_kernel(
     output,

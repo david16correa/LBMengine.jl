@@ -31,8 +31,7 @@ end
 
 function hydroVariablesUpdate!(model::LBMmodel; useEquilibriumScheme = false)
     model.massDensity = massDensityGet(model)
-    model.momentumDensity = momentumDensityGet(model; useEquilibriumScheme = useEquilibriumScheme)
-    model.fluidVelocity = findFluidVelocity(model.massDensity, model.momentumDensity)
+    model.fluidVelocity = momentumDensityGet(model; useEquilibriumScheme = useEquilibriumScheme) |> momentumDensity -> findFluidVelocity(model.massDensity, momentumDensity)
 
     return nothing
 end
@@ -185,7 +184,7 @@ function tick!(model::LBMmodel)
                     sum(conjugateBoundaryNodes) == 0 && break
 
                     # the solids momentum is transfered to the fluid
-                    uw = particle.nodeVelocity + circshift_gpu(particle.nodeVelocity, model.velocities.cs[id])
+                    uw = circshift_gpu(particle.nodeVelocity, model.velocities.cs[id])
                     uwdotci = vectorFieldDotVector(uw,ci)
                     streamedDistribution[conjugateBoundaryNodes] += (2 * wi * model.fluidParams.invC2_s) * model.massDensity[conjugateBoundaryNodes] .* uwdotci[conjugateBoundaryNodes]
 
@@ -263,17 +262,17 @@ rheology
 =============================================================================================
 ========================================================================================== =#
 
-function viscousStressTensor(model)
-    # the non-equilibrium distributions are found
-    nonEquilibriumDistributions = [nonEquilibriumDistribution(id, model) for id in eachindex(model.velocities.cs)]
-
-    # the (1 - Δt/2τ) factor is found beforehand
-    coeff = 1 - 0.5*model.spaceTime.timeStep/model.fluidParams.relaxationTime
-
-    # the viscous stress tensor is returned
-    return [
-        -coeff * sum(model.velocities.cs[id][alpha] * model.velocities.cs[id][beta] * nonEquilibriumDistributions[id] for id in eachindex(model.velocities.cs))
-    for alpha in 1:model.spaceTime.dims, beta in 1:model.spaceTime.dims]
-
-    return nothing
-end
+#= function viscousStressTensor(model) =#
+#=     # the non-equilibrium distributions are found =#
+#=     nonEquilibriumDistributions = [nonEquilibriumDistribution(id, model) for id in eachindex(model.velocities.cs)] =#
+#==#
+#=     # the (1 - Δt/2τ) factor is found beforehand =#
+#=     coeff = 1 - 0.5*model.spaceTime.timeStep/model.fluidParams.relaxationTime =#
+#==#
+#=     # the viscous stress tensor is returned =#
+#=     return [ =#
+#=         -coeff * sum(model.velocities.cs[id][alpha] * model.velocities.cs[id][beta] * nonEquilibriumDistributions[id] for id in eachindex(model.velocities.cs)) =#
+#=     for alpha in 1:model.spaceTime.dims, beta in 1:model.spaceTime.dims] =#
+#==#
+#=     return nothing =#
+#= end =#

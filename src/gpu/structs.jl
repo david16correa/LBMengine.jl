@@ -33,7 +33,6 @@ mutable struct LBMmodel
     fluidParams::NamedTuple # speed of sound and its powers (c_s, c2_s, c4_s), relaxation time (τ)
     initialConditions::NamedTuple # ρ₀
     massDensity::AbstractArray{Float64} # mass density
-    momentumDensity::AbstractArray{Float64} # momentum density
     fluidVelocity::AbstractArray{Float64} # fluid velocity
     forceDensity::AbstractArray{Float64}
     distributions::LBMdistributions # f_i(x, t) for one t

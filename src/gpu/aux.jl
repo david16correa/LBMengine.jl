@@ -86,7 +86,7 @@ function scalarFieldTimesVectorField(scalarField, vectorField)
     output = CuArray{eltype(scalarField)}(undef, rowsCols) # Output matrix
     threads, blocks = getThreadsAndBlocks(dims, rowsCols)
     #
-    kernel = [scalarFieldTimesVectorField2D_kernel, scalarFieldTimesVectorField2D_kernel][dims-1]
+    kernel = [scalarFieldTimesVectorField2D_kernel, scalarFieldTimesVectorField3D_kernel][dims-1]
     @cuda threads=threads blocks=blocks kernel(output, scalarField, vectorField, rowsCols)
     return output
 end
@@ -158,10 +158,14 @@ LBM@gpu aux
 =============================================================================================
 ========================================================================================== =#
 
+# this method essentially divides (ρu⃗)/ρ; however, for solid nodes ρ = 0. findFluidVelocity() parallelizes
+# the division, and returns u = 0⃗ for the solid nodes. This is why I implemented an entire new function
+# instead of using scalarFieldTimesVectorField(inv.(massDensity), momentumDensity), which would've been
+# otherwise sufficient.
 function findFluidVelocity(massDensity, momentumDensity)
     rowsCols = size(momentumDensity)
     dims = rowsCols |> length |> x -> x - 1 # for a vector field, the array will have one more dimension that the problem!
-    output = CuArray{eltype(momentumDensity)}(undef, rowsCols) # Output matrix
+    output = CUDA.zeros(eltype(momentumDensity), rowsCols)
     #
     threads, blocks = getThreadsAndBlocks(dims, rowsCols)
     #
@@ -243,7 +247,7 @@ function getNodeVelocity(model::LBMmodel; id = 1)
 
     (:bead in model.particles[id].particleParams.properties) && (return bulkV)
 
-    fancyR = xMinusR ./ xMinusR_norm
+    fancyR = scalarFieldTimesVectorField(inv.(xMinusR_norm), xMinusR)
     e_dot_fancyR = vectorFieldDotVector(fancyR, model.particles[id].particleParams.swimmingDirection)
 
     firstTerm = model.particles[id].particleParams.B1 .+ model.particles[id].particleParams.B2 * e_dot_fancyR
@@ -259,67 +263,82 @@ saving data
 ========================================================================================== =#
 
 function writeTrajectories(model::LBMmodel)
+    massDensity = model.massDensity |> Array
     if model.spaceTime.dims == 2
+        fluidVelocity = model.fluidVelocity |> Array |> U -> [U[i,j,:] for i in 1:size(U,1), j in 1:size(U,2)];
+        X = model.spaceTime.X |> Array |> X -> [X[i,j,:] for i in 1:size(X,1), j in 1:size(X,2)];
+
         fluidDf = DataFrame(
             tick = model.tick,
             time = model.time,
-            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
-            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
-            massDensity = model.massDensity |> vec,
-            fluidVelocity_x = [velocity[1] for velocity in model.fluidVelocity] |> vec,
-            fluidVelocity_y = [velocity[2] for velocity in model.fluidVelocity] |> vec
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in X] |> vec,
+            massDensity = massDensity |> vec,
+            fluidVelocity_x = [velocity[1] for velocity in fluidVelocity] |> vec,
+            fluidVelocity_y = [velocity[2] for velocity in fluidVelocity] |> vec
         ) # keyword argument constructor
+
+        distributions = model.distributions |> Array |> dists -> [dists[:,:,id] for id in 1:length(model.velocities.cs)];
     elseif model.spaceTime.dims == 3
+        fluidVelocity = model.fluidVelocity |> Array |> U -> [U[i,j,k,:] for i in 1:size(U,1), j in 1:size(U,2), k in 1:size(U,3)];
+        X = model.spaceTime.X |> Array |> X -> [X[i,j,k,:] for i in 1:size(X,1), j in 1:size(X,2), k in 1:size(X,3)];
+
         fluidDf = DataFrame(
             tick = model.tick,
             time = model.time,
-            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            id_z = [coordinate[3] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
-            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
-            coordinate_z = [coordinate[3] for coordinate in model.spaceTime.X] |> vec,
-            massDensity = model.massDensity |> vec,
-            fluidVelocity_x = [velocity[1] for velocity in model.fluidVelocity] |> vec,
-            fluidVelocity_y = [velocity[2] for velocity in model.fluidVelocity] |> vec,
-            fluidVelocity_z = [velocity[3] for velocity in model.fluidVelocity] |> vec
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            id_z = [coordinate[3] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in X] |> vec,
+            coordinate_z = [coordinate[3] for coordinate in X] |> vec,
+            massDensity = massDensity |> vec,
+            fluidVelocity_x = [velocity[1] for velocity in fluidVelocity] |> vec,
+            fluidVelocity_y = [velocity[2] for velocity in fluidVelocity] |> vec,
+            fluidVelocity_z = [velocity[3] for velocity in fluidVelocity] |> vec
         ) # keyword argument constructor
+
+        distributions = model.distributions |> Array |> dists -> [dists[:,:,:, id] for id in 1:length(model.velocities.cs)];
     end
+
     distributionsDf = DataFrame(
-        vec.(model.distributions), ["f$(i)" for i in 1:length(model.distributions)]
+        vec.(distributions), ["f$(i)" for i in 1:length(distributions)]
     ) # vector of vectors constructor
 
     CSV.write("output.lbm/fluidTrj_$(model.tick).csv", [fluidDf distributionsDf])
 end
 
 function writeParticleTrajectory(particle::LBMparticle, model::LBMmodel)
+    position = particle.position |> Array
+    velocity = particle.velocity |> Array
     if model.spaceTime.dims == 2
         particleDf = DataFrame(
             tick = model.tick,
             time = model.time,
             particleId = particle.id,
-            position_x = particle.position[1],
-            position_y = particle.position[2],
-            velocity_x = particle.velocity[1],
-            velocity_y = particle.velocity[2],
+            position_x = position[1],
+            position_y = position[2],
+            velocity_x = velocity[1],
+            velocity_y = velocity[2],
             angularVelocity = particle.angularVelocity
         )
     elseif model.spaceTime.dims == 3
+        angularVelocity = particle.angularVelocity |> Array
         particleDf = DataFrame(
             tick = model.tick,
             time = model.time,
             particleId = particle.id,
-            position_x = particle.position[1],
-            position_y = particle.position[2],
-            position_z = particle.position[3],
-            velocity_x = particle.velocity[1],
-            velocity_y = particle.velocity[2],
-            velocity_z = particle.velocity[3],
-            angularVelocity_x = particle.angularVelocity[1],
-            angularVelocity_y = particle.angularVelocity[2],
-            angularVelocity_z = particle.angularVelocity[3],
+            position_x = position[1],
+            position_y = position[2],
+            position_z = position[3],
+            velocity_x = velocity[1],
+            velocity_y = velocity[2],
+            velocity_z = velocity[3],
+            angularVelocity_x = angularVelocity[1],
+            angularVelocity_y = angularVelocity[2],
+            angularVelocity_z = angularVelocity[3],
         )
     end
 
@@ -340,31 +359,33 @@ function writeTensor(model::LBMmodel, T::Array, name::String)
     mkpath("output.lbm")
 
     if model.spaceTime.dims == 2
+        X = model.spaceTime.X |> Array |> X -> [X[i,j,:] for i in 1:size(X,1), j in 1:size(X,2)];
         metadataDf = DataFrame(
             tick = model.tick,
             time = model.time,
-            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
-            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in X] |> vec,
         ) # keyword argument constructor
         componentStrings = ["x", "y"]
     elseif model.spaceTime.dims == 3
+        X = model.spaceTime.X |> Array |> X -> [X[i,j,k,:] for i in 1:size(X,1), j in 1:size(X,2), k in 1:size(X,3)];
         metadataDf = DataFrame(
             tick = model.tick,
             time = model.time,
-            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            id_z = [coordinate[3] for coordinate in eachindex(IndexCartesian(), model.spaceTime.X)] |> vec,
-            coordinate_x = [coordinate[1] for coordinate in model.spaceTime.X] |> vec,
-            coordinate_y = [coordinate[2] for coordinate in model.spaceTime.X] |> vec,
-            coordinate_z = [coordinate[3] for coordinate in model.spaceTime.X] |> vec,
+            id_x = [coordinate[1] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            id_y = [coordinate[2] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            id_z = [coordinate[3] for coordinate in eachindex(IndexCartesian(), X)] |> vec,
+            coordinate_x = [coordinate[1] for coordinate in X] |> vec,
+            coordinate_y = [coordinate[2] for coordinate in X] |> vec,
+            coordinate_z = [coordinate[3] for coordinate in X] |> vec,
         ) # keyword argument constructor
         componentStrings = ["x", "y", "z"]
     end
 
     componentLabels = ["component_"*i*j for i in componentStrings, j in componentStrings] |> vec
-    tensorDf = T |> vec |> v -> DataFrame(
+    tensorDf = T |> Array |> vec |> v -> DataFrame(
         vec.(v), componentLabels
     ) # vector of vectors constructor
 

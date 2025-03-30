@@ -6,7 +6,7 @@ module LBMengine
 
     # Dynamically load GPU or CPU modules based on CUDA availability (launch julia with `BYPASS_GPU=true julia` to not use the gpu)
     #= bypassGpu = (get(ENV, "BYPASS_GPU", "false") == "true") # this works only during precompilation; a different approach is necessary =#
-    bypassGpu = true
+    bypassGpu = false
     bypassGpu && (@info "GPU bypass enabled; running on CPU")
     useGpu = (CUDA.functional() && !(bypassGpu))
     hardwareModule = useGpu ? "gpu" : "cpu"
