@@ -1,6 +1,6 @@
 #= ==========================================================================================
 =============================================================================================
-all things particles
+time step
 =============================================================================================
 ========================================================================================== =#
 
@@ -61,7 +61,54 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     end
 end
 
+#= ==========================================================================================
+=============================================================================================
+molecular dynamics
+=============================================================================================
+========================================================================================== =#
+
+function molecularDynamicsTick!(model)
+    for bond in model.particleBonds
+        # as of right now, there are only linear bonds
+        if bond.type == :linear
+            particle1 = model.particles[bond.id1]
+            particle2 = model.particles[bond.id2]
+
+            disp21 = particle2.position - particle1.position
+            disp = disp21 |> Array |> norm # this is actually quicker than disp21 |> norm, which I find annoying
+            fancyR21 = disp21 / disp
+
+            # F21 := force acting on particle 1 by virtue of its interaction with particle 2
+            F21 = bond.hookConstant * (disp - bond.equilibriumDisp) * fancyR21
+
+            particle1.momentumInput += model.spaceTime.timeStep * F21
+            particle2.momentumInput -= model.spaceTime.timeStep * F21 # F12 := -F21
+        else
+            particle1 = model.particles[bond.id1]
+            particle2 = model.particles[bond.id2]
+            particle3 = model.particles[bond.id3]
+
+            vecA = particle1.position - particle2.position
+            normA = vecA |> Array |> norm
+            vecB = particle3.position - particle2.position
+            normB = vecB |> Array |> norm
+
+            cosAlpha = sum(vecA .* vecB) / (normA * normB)
+            alpha = cosAlpha |> acos
+
+
+            F31 = -bond.hookConstant/normA^2 * (alpha - bond.equilibriumAngle) * circshift(vecA, 1).*cu([-1;1])
+            particle1.momentumInput += model.spaceTime.timeStep * F31
+
+            F13 = bond.hookConstant/normB^2 * (alpha - bond.equilibriumAngle) * circshift(vecB, 1).*cu([-1;1])
+            particle3.momentumInput += model.spaceTime.timeStep * F13
+        end
+    end
+end
+
 function moveParticles!(model::LBMmodel)
+    molecularDynamicsTick!(model)
+    #
     for id in eachindex(model.particles)
         moveParticles!(id, model);
     end

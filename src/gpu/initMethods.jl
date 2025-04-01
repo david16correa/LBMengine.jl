@@ -218,6 +218,38 @@ function addSquirmer!(model::LBMmodel;
     return nothing
 end
 
+function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp = :default, hookConstant = 1e-1)
+    particle1 = model.particles[id1]
+    particle2 = model.particles[id2]
+    equilibriumDisp == :default && (equilibriumDisp = particle2.position - particle1.position |> Array |> norm)
+    @assert equilibriumDisp isa Number "equilibriumDisp must be a number!"
+    @assert hookConstant isa Number "hookConstant must be a number!"
+
+    append!(model.particleBonds, [(; id1, id2, equilibriumDisp, hookConstant, type=:linear)])
+    return nothing
+end
+
+function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equilibriumAngle = :default, hookConstant = 1e-1)
+    @assert model.spaceTime.dims == 2 "polar bonds have only been implemented in two dimensions!"
+    particle1 = model.particles[id1]
+    particle2 = model.particles[id2]
+    particle3 = model.particles[id3]
+
+    vecA = particle1.position - particle2.position
+    normA = vecA |> Array |> norm
+    vecB = particle3.position - particle2.position
+    normB = vecB |> Array |> norm
+
+    cosAlpha = sum(vecA .* vecB) / (normA * normB)
+
+    equilibriumAngle == :default && (equilibriumAngle = acos(cosAlpha))
+    @assert equilibriumAngle isa Number "equilibriumAngle must be a number!"
+    @assert hookConstant isa Number "hookConstant must be a number!"
+
+    append!(model.particleBonds, [(; id1, id2, id3, equilibriumAngle, hookConstant, type=:polar)])
+    return nothing
+end
+
 "Initializes f_i to f^eq_i, which is the simplest strategy."
 function findInitialConditions(
     id::Int64,
@@ -459,6 +491,7 @@ function modelInit(;
         velocities, # c_i for all i
         boundaryConditionsParams, # stream invasion regions and index j such that c[i] = -c[j]
         []|>Vector{LBMparticle}, # initially there will be no particles
+        [],
         unique(schemes),
     );
 
