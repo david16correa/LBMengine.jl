@@ -215,7 +215,7 @@ function tick!(model::LBMmodel)
     # Finally, the hydrodynamic variables are updated
     hydroVariablesUpdate!(model; useEquilibriumScheme = true);
     # and particles are moved, if there are any
-    (:ladd in model.schemes || :psm in model.schemes) && (moveParticles!(model));
+    (:ladd in model.schemes || :psm in model.schemes) && (molecularDynamicsTick!(model));
 end
 
 function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :default, verbose = false, ticksSaved = :default)

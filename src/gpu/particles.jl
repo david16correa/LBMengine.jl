@@ -67,7 +67,7 @@ molecular dynamics
 =============================================================================================
 ========================================================================================== =#
 
-function molecularDynamicsTick!(model)
+function performBonds!(model)
     for bond in model.particleBonds
         # as of right now, there are only linear bonds
         if bond.type == :linear
@@ -106,8 +106,8 @@ function molecularDynamicsTick!(model)
     end
 end
 
-function moveParticles!(model::LBMmodel)
-    molecularDynamicsTick!(model)
+function molecularDynamicsTick!(model::LBMmodel)
+    performBonds!(model)
     #
     for id in eachindex(model.particles)
         moveParticles!(id, model);
