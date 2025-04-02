@@ -27,19 +27,19 @@ function addBead!(model::LBMmodel;
     if model.spaceTime.dims == 2
         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
         angularVelocity == :default && (angularVelocity = 0.)
-        angularMomentumInput = 0.
+        torqueInput = 0.
         @assert (angularVelocity isa Number) "In two dimensions, angularVelocity must be a number!"
     elseif model.spaceTime.dims == 3
         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
         angularVelocity == :default ? (angularVelocity = [0., 0, 0] |> CuArray{Float64}) : (angularVelocity = angularVelocity |> CuArray{Float64})
-        angularMomentumInput = [0., 0, 0] |> CuArray{Float64}
+        torqueInput = [0., 0, 0] |> CuArray{Float64}
         @assert (angularVelocity isa CuArray{Float64}) "In three dimensions, angularVelocity must be an array!"
     else
         error("For particle simulation dimensionality must be either 2 or 3! dims = $(model.spaceTime.dims)")
     end
 
     # the momentum input is defined
-    momentumInput = CUDA.fill(0., model.spaceTime.dims);
+    forceInput = CUDA.fill(0., model.spaceTime.dims);
 
     solidRegion = fillCuArray(false, size(model.massDensity))
 
@@ -61,8 +61,8 @@ function addBead!(model::LBMmodel;
         velocity,
         angularVelocity,
         [],
-        momentumInput,
-        angularMomentumInput,
+        forceInput,
+        torqueInput,
     )
     append!(model.particles, [newBead]);
 
@@ -115,16 +115,16 @@ function addSquirmer!(model::LBMmodel;
     # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
     if model.spaceTime.dims == 2
         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
-        angularMomentumInput = 0.
+        torqueInput = 0.
         angularVelocity = 0.
     else
         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
-        angularMomentumInput = [0., 0, 0] |> CuArray{Float64}
+        torqueInput = [0., 0, 0] |> CuArray{Float64}
         angularVelocity = [0., 0, 0] |> CuArray{Float64}
     end
 
     # the momentum input is defined
-    momentumInput = CUDA.fill(0., model.spaceTime.dims);
+    forceInput = CUDA.fill(0., model.spaceTime.dims);
 
     # B1 and B2 are chosen
     @assert any(x -> x == :default, [B1, B2, beta]) "B1, B2, and beta cannot be all simultaneously defined!"
@@ -192,8 +192,8 @@ function addSquirmer!(model::LBMmodel;
         velocity,
         angularVelocity,
         [],
-        momentumInput,
-        angularMomentumInput,
+        forceInput,
+        torqueInput,
     )
     append!(model.particles, [newSquirmer]);
 
@@ -230,7 +230,6 @@ function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp
 end
 
 function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equilibriumAngle = :default, hookConstant = 1e-1)
-    @assert model.spaceTime.dims == 2 "polar bonds have only been implemented in two dimensions!"
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
     particle3 = model.particles[id3]

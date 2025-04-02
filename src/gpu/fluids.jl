@@ -191,8 +191,8 @@ function tick!(model::LBMmodel)
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
                         sumTerm = collisionedDistributions[rang(model, conjugateId)...][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
-                        particle.particleParams.coupleForces && (particle.momentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci)
-                        particle.particleParams.coupleTorques && (particle.angularMomentumInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
+                        particle.particleParams.coupleForces && (particle.forceInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci / model.spaceTime.timeStep)
+                        particle.particleParams.coupleTorques && (particle.torqueInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
                             sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
                         )|> Array)
                     end

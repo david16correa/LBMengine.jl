@@ -4,19 +4,6 @@ time step
 =============================================================================================
 ========================================================================================== =#
 
-function eulerStep!(id::Int64, model::LBMmodel)
-    # the particle is saved locally for readibility
-    particle = model.particles[id]
-    # a simple euler scheme is used
-    particle.position += model.spaceTime.timeStep * particle.velocity
-
-    # if the particle has spherical symmetry, then we're done
-    :spherical in particle.particleParams.properties && (return nothing)
-
-    # rotations must be added if non spherical objects are implemetned!!
-    @warn "Methods for non-spherical objects have not yet been implemetned! Particles will not rotate!"
-end
-
 function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
     # the particle is named locally for readibility
     particle = model.particles[id]
@@ -26,18 +13,27 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
     # the velocity and angular velocity are updated, and the particle is moved (this is not necessary in the initial setup)
     if !initialSetup
-        deltaP, deltaL = particle.momentumInput, particle.angularMomentumInput
-        particle.velocity += particle.particleParams.inverseMass * deltaP
-        particle.angularVelocity += particle.particleParams.inverseMomentOfInertia * deltaL
-        # the particle will be moved only if the velocity is nonzero! (there are no methods for rotating particles)
-        (particle.velocity |> v -> v != zero(v)) && (eulerStep!(id, model); particleMoved = true)
-        # the node velocity needs to be found if a) the angular velocity changed, or b) the particle moved
-        ((deltaL |> v -> v != zero(v)) || particleMoved) && (nodeVelocityMustBeFound = true)
+        # Verlet Integration
+        A = particle.forceInput * particle.particleParams.inverseMass
+        Alpha = particle.torqueInput * particle.particleParams.inverseMomentOfInertia
+
+        if model.tick == 0
+            particle.velocity += 0.5 * model.spaceTime.timeStep * A
+            particle.angularVelocity += 0.5 * model.spaceTime.timeStep * Alpha
+        else
+            particle.velocity += model.spaceTime.timeStep * A
+            particle.angularVelocity += model.spaceTime.timeStep * Alpha
+        end
+
+        particle.position += model.spaceTime.timeStep * particle.velocity
+
+        (particle.velocity |> v -> v != zero(v)) && (particleMoved = true)
+        ((Alpha |> v -> v != zero(v)) || particleMoved) && (nodeVelocityMustBeFound = true)
     end
 
     # the inputs are reset
-    particle.momentumInput = particle.momentumInput |> zero
-    particle.angularMomentumInput = particle.angularMomentumInput |> zero
+    particle.forceInput = particle.forceInput |> zero
+    particle.torqueInput = particle.torqueInput |> zero
 
     # the projection of the particle onto the lattice is found, along with its boundary nodes (streaming invasion regions)
     if particleMoved
@@ -81,27 +77,34 @@ function performBonds!(model)
             # F21 := force acting on particle 1 by virtue of its interaction with particle 2
             F21 = bond.hookConstant * (disp - bond.equilibriumDisp) * fancyR21
 
-            particle1.momentumInput += model.spaceTime.timeStep * F21
-            particle2.momentumInput -= model.spaceTime.timeStep * F21 # F12 := -F21
+            particle1.forceInput += F21
+            particle2.forceInput -= F21 # F12 := -F21
         else
             particle1 = model.particles[bond.id1]
             particle2 = model.particles[bond.id2]
             particle3 = model.particles[bond.id3]
 
-            vecA = particle1.position - particle2.position
-            normA = vecA |> Array |> norm
-            vecB = particle3.position - particle2.position
-            normB = vecB |> Array |> norm
+            disp12 = particle1.position - particle2.position
+            normDisp12 = disp12 |> Array |> norm
+            unitDisp12 = disp12/normDisp12
+            disp32 = particle3.position - particle2.position
+            normDisp32 = disp32 |> Array |> norm
+            unitDisp32 = disp32/normDisp32
 
-            cosAlpha = sum(vecA .* vecB) / (normA * normB)
-            alpha = cosAlpha |> acos
+            angle123 = sum(unitDisp12 .* unitDisp32) |> acos
 
+            tau = bond.hookConstant * (angle123 - bond.equilibriumAngle) * cross(unitDisp32, unitDisp12)
 
-            F31 = -bond.hookConstant/normA^2 * (alpha - bond.equilibriumAngle) * circshift(vecA, 1).*cu([-1;1])
-            particle1.momentumInput += model.spaceTime.timeStep * F31
+            F321 = cross(tau, unitDisp32) / normDisp32
+            particle1.forceInput += F321
+            #= println(F321) =#
 
-            F13 = bond.hookConstant/normB^2 * (alpha - bond.equilibriumAngle) * circshift(vecB, 1).*cu([-1;1])
-            particle3.momentumInput += model.spaceTime.timeStep * F13
+            F123 = -cross(tau, unitDisp12) / normDisp12
+            particle3.forceInput += F123
+            #= println(F123) =#
+
+            # due to conservation of momentum
+            particle2.forceInput -= F321 + F123
         end
     end
 end
