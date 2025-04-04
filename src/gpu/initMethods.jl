@@ -218,7 +218,7 @@ function addSquirmer!(model::LBMmodel;
     return nothing
 end
 
-function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp = :default, hookConstant = 1e-1)
+function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp = :default, hookConstant = 1)
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
     equilibriumDisp == :default && (equilibriumDisp = particle2.position - particle1.position |> Array |> norm)
@@ -229,7 +229,7 @@ function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp
     return nothing
 end
 
-function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equilibriumAngle = :default, hookConstant = 1e-1)
+function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equilibriumAngle = :default, hookConstant = 1)
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
     particle3 = model.particles[id3]

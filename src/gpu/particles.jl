@@ -67,44 +67,36 @@ function performBonds!(model)
     for bond in model.particleBonds
         # as of right now, there are only linear bonds
         if bond.type == :linear
-            particle1 = model.particles[bond.id1]
-            particle2 = model.particles[bond.id2]
-
-            disp21 = particle2.position - particle1.position
+            # disp21 := displacement from particle 1 to particle 2
+            disp21 = model.particles[bond.id2].position - model.particles[bond.id1].position
             disp = disp21 |> Array |> norm # this is actually quicker than disp21 |> norm, which I find annoying
-            fancyR21 = disp21 / disp
+            unitDisp21 = disp21 / disp
 
-            # F21 := force acting on particle 1 by virtue of its interaction with particle 2
-            F21 = bond.hookConstant * (disp - bond.equilibriumDisp) * fancyR21
+            # force21 := force acting on particle 1 by virtue of its interaction with particle 2
+            force21 = bond.hookConstant * (disp - bond.equilibriumDisp) * unitDisp21
 
-            particle1.forceInput += F21
-            particle2.forceInput -= F21 # F12 := -F21
+            model.particles[bond.id1].forceInput += force21
+            model.particles[bond.id2].forceInput -= force21 # force12 := -force21
         else
-            particle1 = model.particles[bond.id1]
-            particle2 = model.particles[bond.id2]
-            particle3 = model.particles[bond.id3]
-
-            disp12 = particle1.position - particle2.position
+            # disp12 := displacement from particle 2 to particle 1
+            disp12 = model.particles[bond.id1].position - model.particles[bond.id2].position
             normDisp12 = disp12 |> Array |> norm
             unitDisp12 = disp12/normDisp12
-            disp32 = particle3.position - particle2.position
+            disp32 = model.particles[bond.id3].position - model.particles[bond.id2].position
             normDisp32 = disp32 |> Array |> norm
             unitDisp32 = disp32/normDisp32
 
             angle123 = sum(unitDisp12 .* unitDisp32) |> acos
+            torque = bond.hookConstant * (angle123 - bond.equilibriumAngle) * cross(unitDisp32, unitDisp12)
 
-            tau = bond.hookConstant * (angle123 - bond.equilibriumAngle) * cross(unitDisp32, unitDisp12)
+            # force321 := force acting on particle 1 by virtue of its interaction with particles 2 and 3
+            force321 = -cross(torque, unitDisp12) / normDisp12
+            model.particles[bond.id1].forceInput += force321
 
-            F321 = cross(tau, unitDisp32) / normDisp32
-            particle1.forceInput += F321
-            #= println(F321) =#
+            force123 = cross(torque, unitDisp32) / normDisp32
+            model.particles[bond.id3].forceInput += force123
 
-            F123 = -cross(tau, unitDisp12) / normDisp12
-            particle3.forceInput += F123
-            #= println(F123) =#
-
-            # due to conservation of momentum
-            particle2.forceInput -= F321 + F123
+            model.particles[bond.id2].forceInput -= force321 + force123 # conservation of momentum
         end
     end
 end
