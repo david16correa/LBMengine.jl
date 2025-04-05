@@ -234,7 +234,7 @@ function findInitialConditions(id::Int64, velocities::Vector{LBMvelocity}, fluid
     end
 
     # these functions have different definitions depending on the harware (cpu vs gpu); I need strictly the cpu
-    # version in this specific scenario. I chose to make auxilary copies of them, as I don't mind the overhead
+    # version in this specific scenario. I chose to make auxiliary copies of them, as I don't mind the overhead
     auxVectorFieldDotVector(F, v) = [dot(F, v) for F in F]
     auxVectorFieldDotVectorField(V, W) = [dot(V[id], W[id]) for id in eachindex(IndexCartesian(), V)]
 
