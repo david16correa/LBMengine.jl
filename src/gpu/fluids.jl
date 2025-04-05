@@ -191,10 +191,17 @@ function tick!(model::LBMmodel)
                     # if the solid is coupled to forces or torques, the fluids momentum is transfered to it
                     if particle.particleParams.coupleForces || particle.particleParams.coupleTorques
                         sumTerm = collisionedDistributions[rang(model, conjugateId)...][conjugateBoundaryNodes] + streamedDistribution[conjugateBoundaryNodes]
-                        particle.particleParams.coupleForces && (particle.forceInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * sum(sumTerm) * ci / model.spaceTime.timeStep)
-                        particle.particleParams.coupleTorques && (particle.torqueInput -= model.spaceTime.latticeParameter^model.spaceTime.dims * cross(
-                            sum(sumTerm .* [x - particle.position for x in model.spaceTime.X[conjugateBoundaryNodes]]), ci
-                        )|> Array)
+                        coeff = model.spaceTime.latticeParameter^model.spaceTime.dims / model.spaceTime.timeStep
+                        if particle.particleParams.coupleForces
+                            particle.forceInput -= coeff * sum(sumTerm) * ci
+                        end
+                        if particle.particleParams.coupleTorques
+                            sumTermScalarField = model.massDensity |> zero
+                            sumTermScalarField[conjugateBoundaryNodes] = sumTerm
+                            xMinusR = vectorFieldPlusVector(model.spaceTime.X, -particle.position)
+                            auxStep = scalarFieldTimesVectorField(sumTermScalarField, xMinusR) |> M -> sum(M, dims=(1:model.spaceTime.dims)) |> vec
+                            particle.torqueInput -= coeff * cross(auxStep, ci)
+                        end
                     end
                 end
             end
@@ -251,7 +258,7 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
             writeParticlesTrajectories(model)
         end
     end
-    print("\r");
+    print("\r\n"); flush(stdout)
 
     return nothing
 end

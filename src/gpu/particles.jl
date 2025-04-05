@@ -27,6 +27,29 @@ function moveParticles!(id::Int64, model::LBMmodel; initialSetup = false)
 
         particle.position += model.spaceTime.timeStep * particle.velocity
 
+        # for squirmers, the swimming direction will rotate around. To achieve this, rodrigues'
+        # rotation formula is used - https://en.wikipedia.org/wiki/Rodrigues'_rotation_formula
+        if :squirmer in particle.particleParams.properties
+            # v := vector to be rotated
+            v = particle.particleParams.swimmingDirection
+            # θ := |ω| Δt; since |ω| will be needed shortly, the time step is not multiplied just yet
+            theta = particle.angularVelocity |> norm
+            # if the rotation is zero then the entire scheme is skipped
+            if !(theta ≈ 0)
+                # k is the unit vector describing the axis of rotation about which v will be rotated
+                k = particle.angularVelocity/theta
+                theta *= model.spaceTime.timeStep
+                # the first two terms of rodrigues' rotation formula can be used both in 2D and 3D
+                vRot = v * cos(theta) + cross(k, v) * sin(theta)
+                if model.spaceTime.dims == 3
+                    # this last term will always be zero in 2D, as k̂ = ẑ
+                    vRot += k * dot(k,v) * (1 - cos(theta))
+                end
+                # the swimming direction is updated
+                particle.particleParams = (; particle.particleParams..., swimmingDirection = vRot |> v -> v / norm(v))
+            end
+        end
+
         (particle.velocity |> v -> v != zero(v)) && (particleMoved = true)
         ((Alpha |> v -> v != zero(v)) || particleMoved) && (nodeVelocityMustBeFound = true)
     end

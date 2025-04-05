@@ -93,6 +93,7 @@ function addSquirmer!(model::LBMmodel;
     radius = 0.1,
     position = :default, # default: origin (actual value is dimensionality dependent)
     velocity = :default, # default: static (actual value is dimensionality dependent)
+    angularVelocity = :default, # default: static, (actual value is dimensionality dependent)
     slipSpeed = :default,
     swimmingSpeed = :default,
     swimmingDirection = :default, # default: x-direction
@@ -115,12 +116,14 @@ function addSquirmer!(model::LBMmodel;
     # the moment of inertia, initial angular velocity, and angular momentum input are all initialized
     if model.spaceTime.dims == 2
         momentOfInertia = 0.5 * mass * radius^2 # moment of inertia for a disk
+        angularVelocity == :default && (angularVelocity = 0.)
         torqueInput = 0.
-        angularVelocity = 0.
+        @assert (angularVelocity isa Number) "In two dimensions, angularVelocity must be a number!"
     else
         momentOfInertia = 0.4 * mass * radius^2 # moment of inertia for a sphere
+        angularVelocity == :default ? (angularVelocity = [0., 0, 0] |> CuArray{Float64}) : (angularVelocity = angularVelocity |> CuArray{Float64})
         torqueInput = [0., 0, 0] |> CuArray{Float64}
-        angularVelocity = [0., 0, 0] |> CuArray{Float64}
+        @assert (angularVelocity isa CuArray{Float64}) "In three dimensions, angularVelocity must be an array!"
     end
 
     # the momentum input is defined
