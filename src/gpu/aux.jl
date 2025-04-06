@@ -151,6 +151,10 @@ function cross(omega::Real, V_d::AbstractArray)
     V = V_d |> Array
     return [-omega * V[2], omega * V[1]] |> typeof(V_d)
 end
+function cross(V_d::AbstractArray, omega::Real)
+    V = V_d |> Array
+    return [-omega * V[2], omega * V[1]] |> typeof(V_d)
+end
 
 #= ==========================================================================================
 =============================================================================================

@@ -39,7 +39,7 @@ mutable struct LBMmodel
     velocities::NamedTuple # c_i for all i
     boundaryConditionsParams::NamedTuple # stream invasion regions and index j such that c[i] = -c[j]
     particles::Vector{LBMparticle}
-    particleBonds::AbstractArray
+    particleInteractions::AbstractArray
     schemes::Vector{Symbol}
     #= schemes implemented thus far:
         :bgk (collision model, stable),
