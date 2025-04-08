@@ -221,6 +221,12 @@ function addSquirmer!(model::LBMmodel;
     return nothing
 end
 
+#=
+Units:
+    equilibriumDisp [=] μm,
+    hookConstant [=] fJ / μm²,
+    height [=] fJ
+=#
 function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp = :default, hookConstant = 1)
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
@@ -228,7 +234,14 @@ function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp
     @assert equilibriumDisp isa Number "equilibriumDisp must be a number!"
     @assert hookConstant isa Number "hookConstant must be a number!"
 
-    append!(model.particleInteractions, [(; id1, id2, equilibriumDisp, hookConstant, type=:linear)])
+    append!(model.particleInteractions, [(;
+        id1,
+        id2,
+        equilibriumDisp,
+        hookConstant,
+        type=:linear
+    )])
+
     return nothing
 end
 
@@ -248,37 +261,88 @@ function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equi
     @assert equilibriumAngle isa Number "equilibriumAngle must be a number!"
     @assert hookConstant isa Number "hookConstant must be a number!"
 
-    append!(model.particleInteractions, [(; id1, id2, id3, equilibriumAngle, hookConstant, type=:polar)])
+    append!(model.particleInteractions, [(;
+        id1,
+        id2,
+        id3,
+        equilibriumAngle,
+        hookConstant, type=:polar
+    )])
+
+    return nothing
+end
+
+#=
+Units:
+    equilibriumDisp [=] μm,
+    width [=] μm,
+    height [=] fJ
+=#
+function addBistableBond!(model::LBMmodel, id1::Int64, id2::Int64; lowDisp = :default, highDisp = :default, height = 1)
+    particle1 = model.particles[id1]
+    particle2 = model.particles[id2]
+
+    lowDisp == :default && (lowDisp = particle2.position - particle1.position |> Array |> norm)
+    highDisp == :default && (highDisp = lowDisp + model.spaceTime.latticeParameter)
+    @assert lowDisp isa Number "lowDisp must be a number!"
+    @assert highDisp isa Number "highDisp must be a number!"
+
+    trapRadius = (highDisp + lowDisp)/2
+    width = highDisp - lowDisp
+
+    @assert height isa Number "height must be a number!"
+
+    append!(model.particleInteractions, [(;
+        id1,
+        id2,
+        trapRadius,
+        width,
+        height,
+        fourA = 4 * 16 * height / width^4,
+        twoB = 2 * 8 * height / width^2,
+        type=:bistable
+    )])
+
     return nothing
 end
 
 #=
 Units:
     B [=] mT,
-    μ₀ [=] (pg μm) / (μs² A²)
+    μ₀ [=] (pg μm) / (μs² A²),
+    χ [=] 1
 =#
-function addDipoles!(model::LBMmodel, ids...; B = [1,0], susceptibility = 1, permeability = 4*pi*1e2, rewrite = false)
+function addDipoles!(model::LBMmodel, ids...; magneticField = [1,0], susceptibility = 0.5, permeability = 400*pi, rewrite = false)
     # the new ids are appended to the old ids; a single, optimized list of pairs is to be produced
     ids = ids |> collect
-    interactionIsNew = !any(interaction -> interaction.type == :dipoleDipole, model.particleInteractions) || rewrite
-    if !interactionIsNew
-        interactionId = findfirst(interaction -> interaction.type == :dipoleDipole, model.particleInteractions) 
-        interaction = model.particleInteractions[interactionId]
-        append!(ids, [pair |> collect for pair in interaction.pairs] |> V -> vcat(V...))
-        ids = ids |> unique |> sort
+    # if there are no :dipoleDipole interactions in the model, then we'll write a new interaction
+    writeNewInteraction = !any(interaction -> interaction.type == :dipoleDipole, model.particleInteractions) || rewrite
+    # if an interaction is already written, then the list of dipoles is retrieved
+    if !writeNewInteraction 
+        interactionId = findfirst(interaction -> interaction.type == :dipoleDipole, model.particleInteractions)
+        append!(ids, [pair |> collect for pair in model.particleInteractions[interactionId].pairs] |> V -> vcat(V...))
+        ids = ids |> unique |> sort # sort() is useless here, but I like it because it helps me verify everything is done right
     end
     @assert length(ids)>1 "There must be at least two dipoles!"
+    # all pair combinations are found
     pairs = [(ids[i],ids[j]) for i in eachindex(ids) for j in eachindex(ids) if i < j]
 
-
     # a new interaction is defined if needed; otherwise, the pairs are updated
-    if interactionIsNew
-        bFunction(t::Number, B::AbstractArray) = B|>CuArray{Float64}
-        bFunction(t::Number, B::Number) = B
-        bFunction(t::Number, B::Function) = B(t)
+    if writeNewInteraction
+        # if we're rewritting the interaction, then the old one is deleated
+        rewrite && (findfirst(interaction -> interaction.type == :dipoleDipole, model.particleInteractions) |> id -> deleteat!(model.particleInteractions, id))
+
+        bFunction(t::Number, magneticField::AbstractArray) = magneticField|>CuArray{Float64}
+        bFunction(t::Number, magneticField::Number) = magneticField
+        bFunction(t::Number, magneticField::Function) = magneticField(t) |> cu
 
         r = model.particles[ids[1]].particleParams.radius
-        append!(model.particleInteractions, [(; pairs, dipoleConstant = 4 * pi * r^6 * susceptibility^2 / (3 * permeability), magneticField = t::Number -> bFunction(t, B), type = :dipoleDipole)])
+        append!(model.particleInteractions, [(;
+            pairs,
+            dipoleConstant = 4 * pi * r^6 * susceptibility^2 / (3 * permeability),
+            B = t::Number -> bFunction(t, magneticField),
+            type = :dipoleDipole
+        )])
     else
         model.particleInteractions[interactionId] = (; model.particleInteractions[interactionId]..., pairs)
     end

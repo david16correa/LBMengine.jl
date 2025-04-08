@@ -119,7 +119,7 @@ function parformInteractions!(model)
             normDisp32 = disp32 |> Array |> norm
             unitDisp32 = disp32/normDisp32
 
-            angle123 = sum(unitDisp12 .* unitDisp32) |> acos
+            angle123 = sum(unitDisp12 .* unitDisp32) |> x -> (abs(x)>1 ? sign(x) : x) |> acos
             torque = interaction.hookConstant * (angle123 - interaction.equilibriumAngle) * cross(unitDisp32, unitDisp12)
 
             # force321 := force acting on particle 1 by virtue of its interaction with particles 2 and 3
@@ -131,21 +131,33 @@ function parformInteractions!(model)
 
             model.particles[interaction.id2].forceInput -= force321 + force123 # conservation of momentum
         elseif interaction.type == :dipoleDipole
-            for (id1,id2) in interaction.pairs
-                # disp21 := displacement from particle 1 to particle 2
-                disp21 = model.particles[id2].position - model.particles[id1].position
-                disp = disp21 |> Array |> norm
-                unitDisp21 = disp21 / disp
-                B = interaction.magneticField(model.time)
-
-                force21 = interaction.dipoleConstant / disp^4 * (
-                    2 * cross(cross(disp21, B), B)
-                    - 2 * dot(B,B) * disp21
-                    + 5 * disp21 * (cross(disp21,B) |> v -> dot(v,v))
-                )
-                model.particles[id1].forceInput += force21
-                model.particles[id2].forceInput -= force21 # Newton's third law
+            B = interaction.B(model.time)
+            if !(norm(B) ≈ 0)
+                for (id1,id2) in interaction.pairs
+                    # disp21 := displacement from particle 1 to particle 2
+                    disp21 = model.particles[id2].position - model.particles[id1].position
+                    disp = disp21 |> Array |> norm
+                    unitDisp21 = disp21 / disp
+                    force21 = -interaction.dipoleConstant / disp^4 * (
+                        2 * cross(cross(disp21, B), B)
+                        - 2 * dot(B,B) * disp21
+                        + 5 * disp21 * (cross(disp21,B) |> v -> dot(v,v))
+                    )
+                    model.particles[id1].forceInput += force21
+                    model.particles[id2].forceInput -= force21 # Newton's third law
+                end
             end
+        elseif interaction.type == :bistable
+            # disp21 := displacement from particle 1 to particle 2
+            disp21 = model.particles[interaction.id2].position - model.particles[interaction.id1].position
+            disp = disp21 |> Array |> norm # this is actually quicker than disp21 |> norm, which I find annoying
+            unitDisp21 = disp21 / disp
+
+            # force21 := force acting on particle 1 by virtue of its interaction with particle 2
+            force21 = (interaction.fourA * (disp - interaction.trapRadius)^3 - interaction.twoB * (disp - interaction.trapRadius)) * unitDisp21
+
+            model.particles[interaction.id1].forceInput += force21
+            model.particles[interaction.id2].forceInput -= force21 # Newton's third law
         end
     end
 end
