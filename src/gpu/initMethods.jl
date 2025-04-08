@@ -223,29 +223,28 @@ end
 
 #=
 Units:
-    equilibriumDisp [=] μm,
-    hookConstant [=] fJ / μm²,
-    height [=] fJ
+    equilibriumDisplacement [=] μm,
+    stiffness [=] fJ / μm²,
 =#
-function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp = :default, hookConstant = 1)
+function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisplacement = :default, stiffness = 1)
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
-    equilibriumDisp == :default && (equilibriumDisp = particle2.position - particle1.position |> Array |> norm)
-    @assert equilibriumDisp isa Number "equilibriumDisp must be a number!"
-    @assert hookConstant isa Number "hookConstant must be a number!"
+    equilibriumDisplacement == :default && (equilibriumDisplacement = particle2.position - particle1.position |> Array |> norm)
+    @assert equilibriumDisplacement isa Number "equilibriumDisplacement must be a number!"
+    @assert stiffness isa Number "stiffness must be a number!"
 
-    append!(model.particleInteractions, [(;
-        id1,
-        id2,
-        equilibriumDisp,
-        hookConstant,
-        type=:linear
-    )])
+    newInteraction = LinearInteraction(
+        id1|>Int8,
+        id2|>Int8,
+        equilibriumDisplacement,
+        stiffness,
+    )
+    append!(model.particleInteractions, [newInteraction]);
 
     return nothing
 end
 
-function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equilibriumAngle = :default, hookConstant = 1)
+function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equilibriumAngle = :default, stiffness = 1)
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
     particle3 = model.particles[id3]
@@ -259,26 +258,28 @@ function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equi
 
     equilibriumAngle == :default && (equilibriumAngle = acos(cosAlpha))
     @assert equilibriumAngle isa Number "equilibriumAngle must be a number!"
-    @assert hookConstant isa Number "hookConstant must be a number!"
+    @assert stiffness isa Number "stiffness must be a number!"
 
-    append!(model.particleInteractions, [(;
-        id1,
-        id2,
-        id3,
+    newInteraction = PolarInteraction(
+        id1|>Int8,
+        id2|>Int8,
+        id3|>Int8,
         equilibriumAngle,
-        hookConstant, type=:polar
-    )])
+        stiffness
+    )
+    append!(model.particleInteractions, [newInteraction]);
 
     return nothing
 end
 
 #=
 Units:
-    equilibriumDisp [=] μm,
+    lowDisp [=] μm,
+    highDisp [=] μm,
     width [=] μm,
     height [=] fJ
 =#
-function addBistableBond!(model::LBMmodel, id1::Int64, id2::Int64; lowDisp = :default, highDisp = :default, height = 1)
+function addBistableBond!(model::LBMmodel, id1::Int64, id2::Int64; lowDisp = :default, highDisp = :default, hillHeight = 1)
     particle1 = model.particles[id1]
     particle2 = model.particles[id2]
 
@@ -288,20 +289,20 @@ function addBistableBond!(model::LBMmodel, id1::Int64, id2::Int64; lowDisp = :de
     @assert highDisp isa Number "highDisp must be a number!"
 
     trapRadius = (highDisp + lowDisp)/2
-    width = highDisp - lowDisp
+    trapWidth = highDisp - lowDisp
 
-    @assert height isa Number "height must be a number!"
+    @assert hillHeight isa Number "hillHeight must be a number!"
 
-    append!(model.particleInteractions, [(;
-        id1,
-        id2,
+    newInteraction = BistableInteraction(
+        id1|>Int8,
+        id2|>Int8,
         trapRadius,
-        width,
-        height,
-        fourA = 4 * 16 * height / width^4,
-        twoB = 2 * 8 * height / width^2,
-        type=:bistable
-    )])
+        trapWidth,
+        hillHeight,
+        4 * 16 * hillHeight / trapWidth^4,
+        2 * 8 * hillHeight / trapWidth^2,
+    )
+    append!(model.particleInteractions, [newInteraction]);
 
     return nothing
 end
@@ -316,11 +317,12 @@ function addDipoles!(model::LBMmodel, ids...; magneticField = [1,0], susceptibil
     # the new ids are appended to the old ids; a single, optimized list of pairs is to be produced
     ids = ids |> collect
     # if there are no :dipoleDipole interactions in the model, then we'll write a new interaction
-    writeNewInteraction = !any(interaction -> interaction.type == :dipoleDipole, model.particleInteractions) || rewrite
+    writeNewInteraction = !any(interaction -> interaction isa DipoleDipoleInteraction, model.particleInteractions) || rewrite
     # if an interaction is already written, then the list of dipoles is retrieved
     if !writeNewInteraction 
-        interactionId = findfirst(interaction -> interaction.type == :dipoleDipole, model.particleInteractions)
-        append!(ids, [pair |> collect for pair in model.particleInteractions[interactionId].pairs] |> V -> vcat(V...))
+        interactionId = findfirst(interaction -> interaction isa DipoleDipoleInteraction, model.particleInteractions)
+        oldIds = [pair |> collect for pair in model.particleInteractions[interactionId].pairs] |> V -> vcat(V...)
+        append!(ids, oldIds)
         ids = ids |> unique |> sort # sort() is useless here, but I like it because it helps me verify everything is done right
     end
     @assert length(ids)>1 "There must be at least two dipoles!"
@@ -330,21 +332,22 @@ function addDipoles!(model::LBMmodel, ids...; magneticField = [1,0], susceptibil
     # a new interaction is defined if needed; otherwise, the pairs are updated
     if writeNewInteraction
         # if we're rewritting the interaction, then the old one is deleated
-        rewrite && (findfirst(interaction -> interaction.type == :dipoleDipole, model.particleInteractions) |> id -> deleteat!(model.particleInteractions, id))
+        rewrite && (findfirst(interaction -> interaction isa DipoleDipoleInteraction, model.particleInteractions) |> id -> deleteat!(model.particleInteractions, id))
 
         bFunction(t::Number, magneticField::AbstractArray) = magneticField|>CuArray{Float64}
         bFunction(t::Number, magneticField::Number) = magneticField
         bFunction(t::Number, magneticField::Function) = magneticField(t) |> cu
 
         r = model.particles[ids[1]].particleParams.radius
-        append!(model.particleInteractions, [(;
-            pairs,
-            dipoleConstant = 4 * pi * r^6 * susceptibility^2 / (3 * permeability),
-            B = t::Number -> bFunction(t, magneticField),
-            type = :dipoleDipole
-        )])
+
+        newInteraction = DipoleDipoleInteraction(
+            pairs |> Vector{Tuple{Int8,Int8}},
+            4 * pi * r^6 * susceptibility^2 / (3 * permeability),
+            t::Number -> bFunction(t, magneticField),
+        )
+        append!(model.particleInteractions, [newInteraction]);
     else
-        model.particleInteractions[interactionId] = (; model.particleInteractions[interactionId]..., pairs)
+        model.particleInteractions[interactionId].pairs = pairs
     end
 
     return nothing

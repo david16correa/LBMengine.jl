@@ -23,7 +23,7 @@ module LBMengine
     end
 
     # structs
-    export LBMvelocity, LBMparticle, LBMdistributions, LBMmodel
+    export LBMmodel
 
     # aux methods - some quick plots
     export plotFluidVelocity, plotMomentumDensity, plotMassDensity
