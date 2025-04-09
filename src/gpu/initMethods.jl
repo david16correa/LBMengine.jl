@@ -234,8 +234,8 @@ function addLinearBond!(model::LBMmodel, id1::Int64, id2::Int64; equilibriumDisp
     @assert stiffness isa Number "stiffness must be a number!"
 
     newInteraction = LinearInteraction(
-        id1|>Int8,
-        id2|>Int8,
+        id1|>UInt8,
+        id2|>UInt8,
         equilibriumDisplacement,
         stiffness,
     )
@@ -261,9 +261,9 @@ function addPolarBond!(model::LBMmodel, id1::Int64, id2::Int64, id3::Int64; equi
     @assert stiffness isa Number "stiffness must be a number!"
 
     newInteraction = PolarInteraction(
-        id1|>Int8,
-        id2|>Int8,
-        id3|>Int8,
+        id1|>UInt8,
+        id2|>UInt8,
+        id3|>UInt8,
         equilibriumAngle,
         stiffness
     )
@@ -294,8 +294,8 @@ function addBistableBond!(model::LBMmodel, id1::Int64, id2::Int64; lowDisp = :de
     @assert hillHeight isa Number "hillHeight must be a number!"
 
     newInteraction = BistableInteraction(
-        id1|>Int8,
-        id2|>Int8,
+        id1|>UInt8,
+        id2|>UInt8,
         trapRadius,
         trapWidth,
         hillHeight,
@@ -341,7 +341,7 @@ function addDipoles!(model::LBMmodel, ids...; magneticField = [1,0], susceptibil
         r = model.particles[ids[1]].particleParams.radius
 
         newInteraction = DipoleDipoleInteraction(
-            pairs |> Vector{Tuple{Int8,Int8}},
+            pairs |> Vector{Tuple{UInt8,UInt8}},
             4 * pi * r^6 * susceptibility^2 / (3 * permeability),
             t::Number -> bFunction(t, magneticField),
         )
@@ -349,6 +349,61 @@ function addDipoles!(model::LBMmodel, ids...; magneticField = [1,0], susceptibil
     else
         model.particleInteractions[interactionId].pairs = pairs
     end
+
+    return nothing
+end
+
+function addLennardJones!(model::LBMmodel; epsilon = :default, sigma = :default, cutoff = :default)
+    ids = 1:length(model.particles) |> collect
+    # the new ids are appended to the old ids; a single, optimized list of pairs is to be produced
+    ids = ids |> collect
+    # if there's Lennard-Jones interactions were defined already, it'll be updated
+    rewrite = any(interaction -> interaction isa LennardJonesInteraction, model.particleInteractions)
+    rewrite && (findfirst(interaction -> interaction isa LennardJonesInteraction, model.particleInteractions) |> id -> deleteat!(model.particleInteractions, id))
+
+    # all pair combinations are found
+    pairs = [(ids[i],ids[j]) for i in eachindex(ids) for j in eachindex(ids) if i < j]
+
+    if epsilon == :default
+        rho = filter(x -> !(x ≈0), model.massDensity) |> v -> sum(v)/length(v)
+        epsilon = rho * model.spaceTime.latticeParameter^5 / model.spaceTime.timeStep^2
+    end
+    if sigma == :default
+        # all particles will be assumed to be equal
+        r = model.particles[1].particleParams.radius
+        sigma = 2*r + model.spaceTime.latticeParameter # tries to ensure the separation is at least 2r+Δx
+    end
+
+    (cutoff == :default) && (cutoff = Inf)
+
+    @assert epsilon isa Number "epsilon must be a number!"
+    @assert sigma isa Number "sigma must be a number!"
+
+    newInteraction = LennardJonesInteraction(
+        pairs |> Vector{Tuple{UInt8,UInt8}},
+        epsilon,
+        sigma,
+        cutoff
+    )
+    append!(model.particleInteractions, [newInteraction]);
+
+    return nothing
+end
+
+function addWCA!(model::LBMmodel; epsilon = :default, sigma = :default)
+    if epsilon == :default
+        rho = filter(x -> !(x ≈0), model.massDensity) |> v -> sum(v)/length(v)
+        epsilon = rho * model.spaceTime.latticeParameter^5 / model.spaceTime.timeStep^2
+    end
+    if sigma == :default
+        # all particles will be assumed to be equal
+        r = model.particles[1].particleParams.radius
+        sigma = 2*r + model.spaceTime.latticeParameter # tries to ensure the separation is at least 2r+Δx
+    end
+
+    cutoff = 2^(1/6) * sigma
+
+    addLennardJones!(model; epsilon = epsilon, sigma = sigma, cutoff = cutoff)
 
     return nothing
 end

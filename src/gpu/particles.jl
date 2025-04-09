@@ -173,3 +173,22 @@ function applyInteraction!(model::LBMmodel, interaction::DipoleDipoleInteraction
         end
     end
 end
+
+function applyInteraction!(model::LBMmodel, interaction::LennardJonesInteraction)
+    for (id1,id2) in interaction.pairs
+        # disp21 := displacement from particle 1 to particle 2
+        disp21 = model.particles[id2].position - model.particles[id1].position
+        disp = disp21 |> Array |> norm
+        if disp < interaction.cutoff
+            unitDisp21 = disp21 / disp
+            sigma_disp = interaction.sigma/disp
+
+            force21 = -4 * interaction.epsilon / disp * (
+                12 * sigma_disp^12 - 6 * sigma_disp^6
+            ) * unitDisp21
+
+            model.particles[id1].forceInput += force21
+            model.particles[id2].forceInput -= force21 # Newton's third law
+        end
+    end
+end

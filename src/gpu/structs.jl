@@ -55,15 +55,15 @@ end
 abstract type AbstractInteraction end
 
 struct LinearInteraction <: AbstractInteraction
-    id1::Int8
-    id2::Int8
+    id1::UInt8
+    id2::UInt8
     equilibriumDisplacement::Float64
     stiffness::Float64
 end
 
 struct BistableInteraction <: AbstractInteraction
-    id1::Int8
-    id2::Int8
+    id1::UInt8
+    id2::UInt8
     trapRadius::Float64
     trapWidth::Float64
     hillHeight::Float64
@@ -72,15 +72,22 @@ struct BistableInteraction <: AbstractInteraction
 end
 
 struct PolarInteraction <: AbstractInteraction
-    id1::Int8
-    id2::Int8
-    id3::Int8
+    id1::UInt8
+    id2::UInt8
+    id3::UInt8
     equilibriumAngle::Float64
     stiffness::Float64
 end
 
 mutable struct DipoleDipoleInteraction <: AbstractInteraction
-    pairs::Vector{Tuple{Int8,Int8}}
+    pairs::Vector{Tuple{UInt8,UInt8}}
     dipoleConstant::Float64
     magneticField
+end
+
+mutable struct LennardJonesInteraction <: AbstractInteraction
+    pairs::Vector{Tuple{UInt8,UInt8}}
+    epsilon::Float64
+    sigma::Float64
+    cutoff::Float64
 end
