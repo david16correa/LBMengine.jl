@@ -353,6 +353,11 @@ function addDipoles!(model::LBMmodel, ids...; magneticField = [1,0], susceptibil
     return nothing
 end
 
+function addDipoles!(model::LBMmodel; magneticField = [1,0], susceptibility = 0.5, permeability = 400*pi, rewrite = false)
+    addDipoles!(model, eachindex(model.particles)...; magneticField = magneticField, susceptibility = susceptibility, permeability = permeability, rewrite = rewrite)
+    return nothing
+end
+
 function addLennardJones!(model::LBMmodel; epsilon = :default, sigma = :default, cutoff = :default)
     ids = 1:length(model.particles) |> collect
     # the new ids are appended to the old ids; a single, optimized list of pairs is to be produced
