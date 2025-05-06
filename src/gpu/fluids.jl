@@ -243,7 +243,7 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
     if :saveData in model.schemes
         (ticksSaved == :default) && (ticksSaved = 100);
         totalTicks = floor(simulationTime/model.spaceTime.timeStep)
-        checkPoints = range(0, stop=totalTicks, length=ticksSaved) |> collect .|> round .|> Int64
+        checkpoints = range(model.tick, stop=model.tick+totalTicks, length=ticksSaved) |> collect .|> round .|> Int64
     end
 
     verbose && (outputTimes = range(1, stop = length(time), length = 50) |> collect .|> round)
@@ -252,7 +252,7 @@ function LBMpropagate!(model::LBMmodel; simulationTime = :default, ticks = :defa
         tick!(model);
         verbose && (t in outputTimes) && (print("\r t = $(round(model.time; digits = 2))"); flush(stdout))
         if :saveData in model.schemes
-            (model.tick in checkPoints) && writeTrajectories(model)
+            (model.tick in checkpoints) && writeTrajectories(model)
             # if there are particles in the system, their trajectories are stored as well;
             # since storage is not an issue here, all ticks are saved
             writeParticlesTrajectories(model)

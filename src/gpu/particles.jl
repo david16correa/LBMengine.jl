@@ -143,7 +143,9 @@ function applyInteraction!(model::LBMmodel, interaction::PolarInteraction)
     unitDisp32 = disp32/normDisp32
 
     angle123 = sum(unitDisp12 .* unitDisp32) |> x -> (abs(x)>1 ? sign(x) : x) |> acos
-    torque = interaction.stiffness * (angle123 - interaction.equilibriumAngle) * cross(unitDisp32, unitDisp12)
+    torqueDirection = cross(unitDisp32, unitDisp12); auxNorm = norm(torqueDirection);
+    auxNorm > 0 && (torqueDirection /= auxNorm)
+    torque = interaction.stiffness * (angle123 - interaction.equilibriumAngle) * torqueDirection
 
     # force321 := force acting on particle 1 by virtue of its interaction with particles 2 and 3
     force321 = -cross(torque, unitDisp12) / normDisp12
