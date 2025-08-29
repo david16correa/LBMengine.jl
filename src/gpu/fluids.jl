@@ -150,9 +150,6 @@ function tick!(model::LBMmodel)
             conjugateId = model.boundaryConditionsParams.oppositeVectorId[id];
             conjugateInvasionRegion = model.boundaryConditionsParams.streamingInvasionRegions[rang(model, conjugateId)...];
 
-            # the wall regions are imposed to vanish
-            streamedDistribution[wallRegion] .= 0;
-
             # the boudnary nodes of all rigid moving particles are considered in the streaming invasion exchange step
             if :ladd in model.schemes
                 for particle in model.particles

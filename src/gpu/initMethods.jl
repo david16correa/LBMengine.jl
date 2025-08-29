@@ -453,7 +453,7 @@ function modelInit(;
     timeStep = :default, # default: Δt = Δx
     walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
     dampenEcho = false, # use characteristic boundary conditions to absorb sound waves
-    solidNodes = :default, # default: no solid nodes (other than the walls) 
+    solidNodes = :default, # default: no solid nodes (other than the walls)
     solidNodeVelocity = :default, # default: static solids - u = [0,0]
     isFluidCompressible = true, # this is more stable for several schemes. E.g. ladd
     forceDensity = :default, # default: F(0) = 0
@@ -522,7 +522,7 @@ function modelInit(;
         # if dimensions are too large, and the user did not define a velocity set, then there's an error
         @assert (dims > 1) "1 dimensional LBM is not implemented in CUDA!"
         @assert (dims <= 3) "for dimensions higher than 3 a velocity set must be defined using a NamedTuple! modelInit(...; velocities = (; cs::Vector{Vector{Int8}}, ws::Vector{Float64})"
-        velocities = [:D1Q3, D2Q9, D3Q15, D3Q19, D3Q27][dims]
+        velocities = [:D1Q3, D2Q9, D3Q15][dims]
     else
         id = findfirst(set -> set == velocities, [:D1Q3, :D2Q9, :D3Q15, :D3Q19, :D3Q27])
         @assert id isa Number "If a default velocity set is chosen, it must be one of the following: [:D1Q3, :D2Q9, :D3Q15, :D3Q19, :D3Q27]"
