@@ -442,7 +442,7 @@ function modelInit(;
     fluidVelocity = :default, # default: u(x) = 0
     velocities = :default, # default: chosen by dimensionality (D1Q3, D2Q9, or D3Q27)
     relaxationTimeRatio = :default, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable, default: 0.8
-    viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: it's value is taken to be such that the relaxationTime is 0.8Δt
+    viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: 1
     collisionModel = :default, # {:bgk, :trt}, default: :bgk
     kineticParameter = 0.25, # Λ, for :trt; different choices lead to different stability behaviors! Cf. Krüger p.429
     xlims = :default,
@@ -460,29 +460,38 @@ function modelInit(;
     forcingScheme = :default, # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
     saveData = false, # by default, no data is saved
 )
-    # the list of schemes is initialized
+    #= --------------------------------- init of various lists --------------------------------- =#
+    # schemes
     schemes = [] |> Vector{Symbol}
-    # the keywords for the initial conditions are initialized
+    # the keywords for the initial conditions
     kwInitialConditions = (; )
+    # parameters for boundary conditions
     boundaryConditionsParams = (; )
 
-    #= - the lattice parameter, relaxation time ratio, and viscosity are sorted out - =#
-    @assert any(x -> x == :default, [latticeParameter, relaxationTimeRatio, viscosity]) "latticeParameter, relaxationTimeRatio, and viscosity cannot be all simultaneously defined!"
+    #= - the time step, lattice parameter, relaxation time ratio, and viscosity are sorted out - =#
+    @assert any(x -> x == :default, [timeStep, relaxationTimeRatio, viscosity]) "timeStep, relaxationTimeRatio, and viscosity cannot be all simultaneously defined!"
+    @assert any(x -> x == :default, [timeStep, latticeParameter]) "timeStep, and latticeParameter cannot be both simultaneously defined!"
 
-    if latticeParameter == :default
-        (relaxationTimeRatio == :default) && (relaxationTimeRatio = 15);
-        (viscosity == :default) && (viscosity = 0.890);
-        latticeParameter = 3*viscosity/(relaxationTimeRatio - 0.5)
-    else
-        if relaxationTimeRatio == :default
-            (viscosity == :default) && (viscosity = 0.890);
-            relaxationTimeRatio = 3*viscosity/latticeParameter + 0.5
-        else
-            viscosity = latticeParameter/3 * (relaxationTimeRatio - 0.5)
-        end
+    if latticeParameter != :default
+        @assert latticeParameter isa Number "latticeParameter must be a number!"
+        timeStep = latticeParameter # Δt must be equal to Δx! To work around this, use units such that Δt = Δx
     end
 
-    #= -------------------------- space time is sorted out -------------------------- =#
+    if timeStep == :default
+        (relaxationTimeRatio == :default) && (relaxationTimeRatio = 15);
+        (viscosity == :default) && (viscosity = 1);
+        timeStep = 3*viscosity/(relaxationTimeRatio - 0.5)
+    else
+        if relaxationTimeRatio == :default
+            (viscosity == :default) && (viscosity = 1);
+            relaxationTimeRatio = 3*viscosity/timeStep + 0.5
+        else
+            viscosity = timeStep/3 * (relaxationTimeRatio - 0.5)
+        end
+    end
+    latticeParameter = timeStep # Δx must be equal to Δt! To work around this, use units such that Δx = Δt
+
+    #= -------------------------------- space time is sorted out ------------------------------- =#
     (xlims == :default) && (xlims = (0,1));
     (ylims == :default) && (ylims = xlims);
     (zlims == :default) && (zlims = xlims);
@@ -495,7 +504,7 @@ function modelInit(;
 
     coordinates, modelSize = (x,y,z)[1:dims] |> v -> (v, length.(v))
 
-    #= -------------------------- hydrodynamic variables -------------------------- =#
+    #= --------------------------------- hydrodynamic variables -------------------------------- =#
     # if default conditions were chosen, ρ is built. Otherwise its dimensions are verified
     if massDensity == :default
         massDensity = fillCuArray(1., modelSize)
@@ -516,7 +525,7 @@ function modelInit(;
         fluidVelocity = fluidVelocity |> CuArray{Float64}
     end
 
-    #= ------------------------ choosing the velocity set ----------------------- =#
+    #= ------------------------------- choosing the velocity set ------------------------------- =#
     # if the user did not define a velocity set, then a preset is chosen
     if velocities == :default
         # if dimensions are too large, and the user did not define a velocity set, then there's an error
@@ -531,16 +540,14 @@ function modelInit(;
     @assert (velocities.cs[1] |> length == dims) "The chosen velocity must be $dims-dimensional!"
     velocities = (; cs = velocities.cs.|>CuArray{Int8}, ws = velocities.ws)
 
-    #= ---------------- space and time variables are initialized ---------------- =#
-    # by default Δt = Δx, as this is the most stable
-    (timeStep == :default) && (timeStep = latticeParameter);
+    #= ----------------------- space and time variables are initialized ------------------------ =#
     # latticeSpeed := Δx/Δt
     latticeSpeed = latticeParameter/timeStep |> Float64
     X = coordinatesCuArray(coordinates)
     spaceTime = (; coordinates, X, latticeParameter, timeStep, latticeSpeed, dims);
     tick, time = 0, 0.;
 
-    #= -------------------- fluid parameters are initialized -------------------- =#
+    #= ---------------------------- fluid parameters are initialized --------------------------- =#
     c_s, c2_s, c4_s = latticeSpeed/√3, latticeSpeed^2 / 3, latticeSpeed^4 / 9;
     invC_s, invC2_s, invC4_s = √3/latticeSpeed, 3/latticeSpeed^2, 9/latticeSpeed^4;
     collisionModel == :default && (collisionModel = :trt)
@@ -558,7 +565,7 @@ function modelInit(;
     end
     append!(schemes, [collisionModel])
 
-    #= -------------------- boundary conditions (bounce back) -------------------- =#
+    #= --------------------------- boundary conditions (bounce back) --------------------------- =#
     wallRegion = fillCuArray(false, modelSize)
     if walledDimensions != :default && length(walledDimensions) != 0
         if dampenEcho
@@ -581,11 +588,11 @@ function modelInit(;
         massDensity[wallRegion] .= 0;
         fluidVelocity[vectorBitId(wallRegion)] .= 0;
         streamingInvasionRegions, oppositeVectorId = bounceBackPrep(wallRegion, velocities);
-        :bounceBack in schemes && (boundaryConditionsParams = (; boundaryConditionsParams..., streamingInvasionRegions));
+        :bounceBack in schemes && (boundaryConditionsParams = (; boundaryConditionsParams..., oppositeVectorId, streamingInvasionRegions));
         :trt in schemes && (boundaryConditionsParams = (; boundaryConditionsParams..., oppositeVectorId));
     end
 
-    #= -------------------- boundary conditions (moving walls) ------------------- =#
+    #= -------------------------- boundary conditions (moving walls) --------------------------- =#
     if solidNodeVelocity isa Array && solidNodeVelocity[1] isa Vector && size(solidNodeVelocity) == size(massDensity)
         maskedArray = fillCuArray(fill(0., dims), modelSize)
         maskedArray[vectorBitId(wallRegion)] = solidNodeVelocity[vectorBitId(wallRegion)]
@@ -594,7 +601,7 @@ function modelInit(;
         append!(schemes, [:movingWalls])
     end
 
-    #= --------------------------- forcing scheme prep --------------------------- =#
+    #= ---------------------------------- forcing scheme prep ---------------------------------- =#
     # the default forcing scheme is Guo
     forcingScheme == :default && (forcingScheme = :guo)
 
@@ -619,7 +626,7 @@ function modelInit(;
         error("force density does not have consistent dimensions!")
     end
 
-    #= --------------------------- initial distributions are found --------------------------- =#
+    #= ---------------------------- initial distributions are found ---------------------------- =#
     initialDistributions = CuArray{eltype(massDensity)}(undef, (modelSize..., length(velocities.cs))) # Output matrix
     for id in 1:length(velocities.cs)
         initialDistributions[rang(size(initialDistributions), id)...] = findInitialConditions(
@@ -633,14 +640,14 @@ function modelInit(;
         )
     end
 
-    #= ---------------------------------- saving data setup ---------------------------------- =#
+    #= ----------------------------------- saving data setup ----------------------------------- =#
     if saveData
         append!(schemes, [:saveData])
         rm("output.lbm"; force=true, recursive=true)
         mkdir("output.lbm")
     end
 
-    #= ------------------------------ the model is initialized ------------------------------ =#
+    #= ------------------------------- the model is initialized -------------------------------- =#
     model = LBMmodel(
         spaceTime, # space step (Δx), time step (Δt), space coordinate (x), Δt/Δx, dimensionality (dims)
         tick,
