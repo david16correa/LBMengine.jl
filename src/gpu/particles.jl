@@ -166,9 +166,9 @@ function applyInteraction!(model::LBMmodel, interaction::DipoleDipoleInteraction
             disp = disp21 |> Array |> norm
             unitDisp21 = disp21 / disp
             force21 = -interaction.dipoleConstant / disp^4 * (
-                2 * cross(cross(disp21, B), B)
-                - 2 * dot(B,B) * disp21
-                + 5 * disp21 * (cross(disp21,B) |> v -> dot(v,v))
+                2 * cross(cross(unitDisp21, B), B)
+                - 2 * dot(B,B) * unitDisp21
+                + 5 * unitDisp21 * (cross(unitDisp21,B) |> v -> dot(v,v))
             )
             model.particles[id1].forceInput += force21
             model.particles[id2].forceInput -= force21 # Newton's third law
