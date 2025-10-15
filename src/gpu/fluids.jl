@@ -150,6 +150,9 @@ function tick!(model::LBMmodel)
             conjugateId = model.boundaryConditionsParams.oppositeVectorId[id];
             conjugateInvasionRegion = model.boundaryConditionsParams.streamingInvasionRegions[rang(model, conjugateId)...];
 
+            # the wall regions are imposed to vanish; this is technically wasteful, but it helps mitigate numerical errors within solid regions
+            streamedDistribution[wallRegion] .= 0;
+
             # the boudnary nodes of all rigid moving particles are considered in the streaming invasion exchange step
             if :ladd in model.schemes
                 for particle in model.particles
@@ -163,7 +166,7 @@ function tick!(model::LBMmodel)
 
             # if any wall is moving, its momentum is transfered to the fluid
             if :movingWalls in model.schemes
-                ci = model.velocities.cs[id].c .* model.spaceTime.latticeSpeed
+                ci = model.velocities.cs[id] .* model.spaceTime.latticeSpeed
                 wi = model.velocities.ws[id]
 
                 uwdotci = circshift_gpu(model.boundaryConditionsParams.solidNodeVelocity, model.velocities.cs[id]) |> uw -> vectorFieldDotVector(uw,ci)

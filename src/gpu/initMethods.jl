@@ -441,16 +441,16 @@ function modelInit(;
     massDensity = :default, # default: ρ(x) = 1
     fluidVelocity = :default, # default: u(x) = 0
     velocities = :default, # default: chosen by dimensionality (D1Q3, D2Q9, or D3Q27)
-    relaxationTimeRatio = :default, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable, default: 0.8
-    viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: 1
     collisionModel = :default, # {:bgk, :trt}, default: :bgk
+    relaxationTimeRatio = :default, # τ/Δt > 1 → under-relaxation, τ/Δt = 1 → full relaxation, 0.5 < τ/Δt < 1 → over-relaxation, τ/Δt < 0.5 → unstable, default: 15
+    viscosity = :default, # kinematic shear viscosity; its units are length²/time. Default: 1
+    timeStep = :default, # default: Δt = 3ν/(τ/Δt - 1/2)
+    latticeParameter = :default, # default: Δx = Δt
     kineticParameter = 0.25, # Λ, for :trt; different choices lead to different stability behaviors! Cf. Krüger p.429
     xlims = :default,
     ylims = :default,
     zlims = :default,
-    latticeParameter = :default,
     dims = 2, # default mode must be added!!
-    timeStep = :default, # default: Δt = Δx
     walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
     dampenEcho = false, # use characteristic boundary conditions to absorb sound waves
     solidNodes = :default, # default: no solid nodes (other than the walls)
@@ -492,7 +492,7 @@ function modelInit(;
     latticeParameter = timeStep # Δx must be equal to Δt! To work around this, use units such that Δx = Δt
 
     #= -------------------------------- space time is sorted out ------------------------------- =#
-    (xlims == :default) && (xlims = (0,1));
+    (xlims == :default) && (xlims = (-1,1));
     (ylims == :default) && (ylims = xlims);
     (zlims == :default) && (zlims = xlims);
 
@@ -578,9 +578,20 @@ function modelInit(;
 
         boundaryConditionsParams = (; boundaryConditionsParams..., walledDimensions, wallRegion)
     end
-    if solidNodes != :default && size(solidNodes) == size(wallRegion)
-        wallRegion = wallRegion .|| solidNodes|>cu
 
+    if solidNodes != :default
+        @assert (solidNodes isa Function) "solidNodes must be a function!"
+        if dims == 2
+            newWall = [solidNodes(x,y) for x in x, y in y]
+        elseif dims == 3
+            newWall = [solidNodes(x,y,z) for x in x, y in y, z in z]
+        end
+
+        @assert (eltype(newWall) == Bool) "solidNodes must return boolean values!"
+
+        wallRegion = wallRegion .|| cu(newWall)
+
+        boundaryConditionsParams = (; boundaryConditionsParams..., wallRegion)
         append!(schemes, [:bounceBack])
     end
 
@@ -593,10 +604,22 @@ function modelInit(;
     end
 
     #= -------------------------- boundary conditions (moving walls) --------------------------- =#
-    if solidNodeVelocity isa Array && solidNodeVelocity[1] isa Vector && size(solidNodeVelocity) == size(massDensity)
-        maskedArray = fillCuArray(fill(0., dims), modelSize)
-        maskedArray[vectorBitId(wallRegion)] = solidNodeVelocity[vectorBitId(wallRegion)]
-        boundaryConditionsParams = (; boundaryConditionsParams..., solidNodeVelocity = maskedArray);
+    if solidNodeVelocity != :default
+        @assert (solidNodeVelocity isa Function) "solidNodeVelocity must be a function!"
+        nodeVelocities = CuArray{eltype(massDensity)}(undef, (modelSize..., dims))
+        if dims == 2
+            auxMatrix = [solidNodeVelocity(x,y)|>Vector{Float64} for x in x, y in y]
+        elseif dims == 3
+            auxMatrix = [solidNodeVelocity(x,y,z)|>Vector{Float64} for x in x, y in y, z in z]
+        end
+        @assert (length(auxMatrix[1]) == dims) "solidNodeVelocity must return a vector of dimension $(dims)!"
+        for id in 1:dims
+            M = [M[id] for M in auxMatrix]
+            M[[!b for b in wallRegion|>Array]] .= 0.
+            nodeVelocities[rang(size(nodeVelocities), id)...] = M
+        end
+
+        boundaryConditionsParams = (; boundaryConditionsParams..., solidNodeVelocity = nodeVelocities);
 
         append!(schemes, [:movingWalls])
     end
