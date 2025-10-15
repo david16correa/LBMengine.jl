@@ -102,12 +102,20 @@ function plotFluidVelocity(model::LBMmodel;
     indices_y = range(1, stop = length(model.spaceTime.coordinates[2]), length = 11) |> collect .|> round .|> Int64
     vectorFieldX = model.spaceTime.coordinates[1][indices_x];
     vectorFieldY = model.spaceTime.coordinates[2][indices_y];
+
     pos = [Point2(i,j) for i ∈ vectorFieldX for j ∈ vectorFieldY];
-    vec = [fluidVelocity[i,j] for i ∈ eachindex(model.spaceTime.coordinates[1])[indices_x] for j ∈ eachindex(model.spaceTime.coordinates[2])[indices_y]];
-    vec = 0.07 .* vec ./ maximumFluidSpeed;
-    nonZeroVec = (vec .|> norm) .> 0.0007
-    arrows!(fig[1,1], pos[nonZeroVec], vec[nonZeroVec],
-        arrowsize = 10,
+    # we only need the normalized vector field; places where the fluid velocity is zero are taken care of
+    vec = [
+        fluidVelocity[i,j] |> v -> norm(v) > 0 ? v/norm(v) : [0,0]
+        for i ∈ eachindex(model.spaceTime.coordinates[1])[indices_x] for j ∈ eachindex(model.spaceTime.coordinates[2])[indices_y]
+    ];
+    vec = (model.spaceTime.coordinates[1] |> v -> v[end] - v[1]) / 20 .* vec
+
+    arrows2d!(fig[1,1], pos, vec,
+        shaftlength = 0.05,
+        shaftwidth = 0.01,
+        tiplength = 0.05,
+        tipwidth = 0.05,
         align = :center
     );
     xlims!(lbs[1], ubs[1]);

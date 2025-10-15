@@ -185,6 +185,7 @@ function applyInteraction!(model::LBMmodel, interaction::LennardJonesInteraction
             unitDisp21 = disp21 / disp
             sigma_disp = interaction.sigma/disp
 
+            # ∂u_LJ/∂r r̂
             force21 = -4 * interaction.epsilon / disp * (
                 12 * sigma_disp^12 - 6 * sigma_disp^6
             ) * unitDisp21

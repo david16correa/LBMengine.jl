@@ -251,11 +251,13 @@ function getNodeVelocity(model::LBMmodel; id = 1)
 
     (:bead in model.particles[id].particleParams.properties) && (return bulkV)
 
-    fancyR = scalarFieldTimesVectorField(inv.(xMinusR_norm), xMinusR)
-    e_dot_fancyR = vectorFieldDotVector(fancyR, model.particles[id].particleParams.swimmingDirection)
+    # particles are assumed to be either a bead, or a squirmer
 
-    firstTerm = model.particles[id].particleParams.B1 .+ model.particles[id].particleParams.B2 * e_dot_fancyR
-    secondTerm = scalarFieldTimesVectorField(e_dot_fancyR, fancyR) |> vF -> vectorFieldPlusVector(vF, -model.particles[id].particleParams.swimmingDirection)
+    unitR = scalarFieldTimesVectorField(inv.(xMinusR_norm), xMinusR)
+    e_dot_unitR = vectorFieldDotVector(unitR, model.particles[id].particleParams.swimmingDirection)
+
+    firstTerm = model.particles[id].particleParams.B1 .+ model.particles[id].particleParams.B2 * e_dot_unitR
+    secondTerm = scalarFieldTimesVectorField(e_dot_unitR, unitR) |> vF -> vectorFieldPlusVector(vF, -model.particles[id].particleParams.swimmingDirection)
 
     return scalarFieldTimesVectorField(firstTerm, secondTerm) + bulkV
 end
