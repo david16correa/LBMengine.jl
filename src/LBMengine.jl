@@ -26,7 +26,7 @@ module LBMengine
     export LBMmodel
 
     # aux methods - some quick plots
-    export plotFluidVelocity, plotMomentumDensity, plotMassDensity
+    export plotFluidVelocity, plotMassDensity
 
     # main methods - initialization
     export modelInit, addBead!, addSquirmer!, addLinearBond!, addPolarBond!, addDipoles!, addBistableBond!, addLennardJones!, addWCA!
