@@ -174,7 +174,7 @@ function addSquirmer!(model::LBMmodel;
 
     solidRegion = fillCuArray(false, size(model.massDensity))
 
-    particleParams = (; 
+    particleParams = (;
         radius,
         B1,
         B2,

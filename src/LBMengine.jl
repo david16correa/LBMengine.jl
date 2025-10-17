@@ -3,6 +3,7 @@ module LBMengine
     using DataFrames, CSV, Dates # data dependencies
     import LinearAlgebra.dot, LinearAlgebra.norm # numerical analysis dependencies
     using CairoMakie # graphics dependencies
+    import Printf.@sprintf # for scientific notation
 
     # Dynamically load GPU or CPU modules based on CUDA availability (launch julia with `BYPASS_GPU=true julia` to not use the gpu)
     #= bypassGpu = (get(ENV, "BYPASS_GPU", "false") == "true") # this works only during precompilation; a different approach is necessary =#

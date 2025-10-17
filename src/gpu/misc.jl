@@ -85,18 +85,17 @@ function plotFluidVelocity(model::LBMmodel;
     end
 
     #----------------------------------heatmap and colorbar---------------------------------
-    fig, ax, hm = heatmap(model.spaceTime.coordinates[1], model.spaceTime.coordinates[2], norm.(fluidVelocity)/model.fluidParams.c_s, alpha = 0.7,
-        colorrange = (0, maximumFluidSpeed/model.fluidParams.c_s), 
-        highclip = :red, # truncate the colormap 
+    fig, ax, hm = heatmap(model.spaceTime.coordinates[1], model.spaceTime.coordinates[2], norm.(fluidVelocity)/maximumFluidSpeed, alpha = 0.7,
+        colorrange = (0, 1),
         axis=(
             title = "fluid velocity, t = $(t |> x -> round(x; digits = 2))",
-            aspect = ubs - lbs |> v -> v[1]/v[2]
+            aspect = ubs - lbs |> v -> v[1]/v[2],
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
-    Colorbar(fig[:, end+1], hm, label = "Mach number (M = u/cₛ)"
-        #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
-    );
+    uMaxStr = @sprintf "%.4e" maximumFluidSpeed
+    Colorbar(fig[:, end+1], hm, label = "u/uₘₐₓ (uₘₐₓ = $uMaxStr)");
+
     #--------------------------------------vector field---------------------------------------
     indices_x = range(1, stop = length(model.spaceTime.coordinates[1]), length = 11) |> collect .|> round .|> Int64
     indices_y = range(1, stop = length(model.spaceTime.coordinates[2]), length = 11) |> collect .|> round .|> Int64
@@ -173,9 +172,8 @@ function plotMassDensity(model::LBMmodel;
         ),
     );
     ax.xlabel = "x"; ax.ylabel = "y";
-    Colorbar(fig[:, end+1], hm,
-        #=ticks = (-1:0.5:1, ["$i" for i ∈ -1:0.5:1]),=#
-    );
+    Colorbar(fig[:, end+1], hm, label = "ρ");
+
     xlims!(lbs[1], ubs[1]);
     ylims!(lbs[2], ubs[2]);
 
