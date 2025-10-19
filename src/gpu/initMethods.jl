@@ -453,8 +453,8 @@ function modelInit(;
     dims = 2, # default mode must be added!!
     walledDimensions = :default, # walls around y axis (all non-walled dimensions are periodic!)
     dampenEcho = false, # use characteristic boundary conditions to absorb sound waves
-    solidNodes = :default, # default: no solid nodes (other than the walls)
-    solidNodeVelocity = :default, # default: static solids - u = [0,0]
+    walls = :default, # default: no solid nodes (other than the walls)
+    movingWalls = :default, # default: static solids - u = [0,0]
     isFluidCompressible = true, # this is more stable for several schemes. E.g. ladd
     forceDensity = :default, # default: F(0) = 0
     forcingScheme = :default, # {:guo, :shan}, default: Guo, C. Zheng, B. Shi, Phys. Rev. E 65, 46308 (2002)
@@ -579,20 +579,44 @@ function modelInit(;
         boundaryConditionsParams = (; boundaryConditionsParams..., walledDimensions, wallRegion)
     end
 
-    if solidNodes != :default
-        @assert (solidNodes isa Function) "solidNodes must be a function!"
+    if walls != :default
+        @assert (walls isa Function) "walls must be a function!"
         if dims == 2
-            newWall = [solidNodes(x,y) for x in x, y in y]
+            newWall = [walls(x,y) for x in x, y in y]
         elseif dims == 3
-            newWall = [solidNodes(x,y,z) for x in x, y in y, z in z]
+            newWall = [walls(x,y,z) for x in x, y in y, z in z]
         end
 
-        @assert (eltype(newWall) == Bool) "solidNodes must return boolean values!"
+        @assert (eltype(newWall) == Bool) "walls must return boolean values!"
 
         wallRegion = wallRegion .|| cu(newWall)
 
         boundaryConditionsParams = (; boundaryConditionsParams..., wallRegion)
         append!(schemes, [:bounceBack])
+    end
+
+    #= ------------------------------------ (moving walls) ------------------------------------- =#
+    if movingWalls != :default
+        @assert (movingWalls isa Function) "movingWalls must be a function!"
+        nodeVelocities = CuArray{eltype(massDensity)}(undef, (modelSize..., dims))
+        if dims == 2
+            auxMatrix = [movingWalls(x,y)|>Vector{Float64} for x in x, y in y]
+        elseif dims == 3
+            auxMatrix = [movingWalls(x,y,z)|>Vector{Float64} for x in x, y in y, z in z]
+        end
+        @assert (length(auxMatrix[1]) == dims) "movingWalls must return a vector of dimension $(dims)!"
+        for id in 1:dims
+            M = [M[id] for M in auxMatrix]
+            #= M[[!b for b in wallRegion|>Array]] .= 0. =#
+            nodeVelocities[rang(size(nodeVelocities), id)...] = M
+        end
+
+        newWall = [norm(node) > 0 for node in auxMatrix]
+        wallRegion = wallRegion .|| cu(newWall)
+
+        boundaryConditionsParams = (; boundaryConditionsParams..., wallRegion, solidNodeVelocity = nodeVelocities);
+
+        append!(schemes, [:movingWalls, :bounceBack])
     end
 
     if :bounceBack in schemes || :trt in schemes
@@ -603,26 +627,6 @@ function modelInit(;
         :trt in schemes && (boundaryConditionsParams = (; boundaryConditionsParams..., oppositeVectorId));
     end
 
-    #= -------------------------- boundary conditions (moving walls) --------------------------- =#
-    if solidNodeVelocity != :default
-        @assert (solidNodeVelocity isa Function) "solidNodeVelocity must be a function!"
-        nodeVelocities = CuArray{eltype(massDensity)}(undef, (modelSize..., dims))
-        if dims == 2
-            auxMatrix = [solidNodeVelocity(x,y)|>Vector{Float64} for x in x, y in y]
-        elseif dims == 3
-            auxMatrix = [solidNodeVelocity(x,y,z)|>Vector{Float64} for x in x, y in y, z in z]
-        end
-        @assert (length(auxMatrix[1]) == dims) "solidNodeVelocity must return a vector of dimension $(dims)!"
-        for id in 1:dims
-            M = [M[id] for M in auxMatrix]
-            M[[!b for b in wallRegion|>Array]] .= 0.
-            nodeVelocities[rang(size(nodeVelocities), id)...] = M
-        end
-
-        boundaryConditionsParams = (; boundaryConditionsParams..., solidNodeVelocity = nodeVelocities);
-
-        append!(schemes, [:movingWalls])
-    end
 
     #= ---------------------------------- forcing scheme prep ---------------------------------- =#
     # the default forcing scheme is Guo
